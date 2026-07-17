@@ -61,13 +61,19 @@ def period_samples(physical_period_seconds: float, delta_seconds: float) -> floa
     return physical_period_seconds / delta_seconds
 
 
-def fourier_seasonal(
+def multiperiodic(
     periods: float | Sequence[float],
     num_harmonics: int = 6,
     weight: float = 1e-1,
-    role: str = "seasonal",
+    role: str = "periodic",
 ) -> Component:
-    """Truncated-Fourier seasonal component (DC column removed).
+    """Truncated-Fourier component over one or more periods (DC column removed).
+
+    A generic periodic component: a truncated Fourier basis over the given
+    period(s). "Seasonal" structure is one common use, but daily, weekly, or
+    any other cyclic pattern is expressed the same way -- the component makes no
+    domain assumption.
+
 
     Parameters
     ----------
@@ -130,16 +136,16 @@ if __name__ == "__main__":
     y = true + 0.05 * rng.standard_normal(T)
     y[100:140] = np.nan
 
-    comp = fourier_seasonal(
-        periods=[P_year, P_week], num_harmonics=6, weight=1e-2, role="seasonal"
+    comp = multiperiodic(
+        periods=[P_year, P_week], num_harmonics=6, weight=1e-2, role="periodic"
     )
     built = make_problem(y, components=[comp], residual_loss="l2")
     out = solve(built)
 
-    seasonal_hat = out["values"]["seasonal"]
+    seasonal_hat = out["values"]["periodic"]
     rmse = np.sqrt(np.mean((seasonal_hat - true) ** 2))
     dc = np.mean(seasonal_hat)
-    theta = out["values"]["seasonal_theta"]
+    theta = out["values"]["periodic_theta"]
 
     # NOTE: spcqe builds a TENSOR (outer-product) basis across periods, not
     # independent additive seasonals. For n periods each with H harmonics the

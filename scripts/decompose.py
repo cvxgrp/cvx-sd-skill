@@ -31,6 +31,8 @@ from typing import Callable
 import cvxpy as cp
 import numpy as np
 
+import data_fidelity
+
 _OPTIMAL_STATUSES = ("optimal", "optimal_inaccurate")
 
 
@@ -64,47 +66,48 @@ class Component:
     aux: dict[str, cp.Expression] = field(default_factory=dict)
 
 
-def _residual_loss(x1: cp.Variable, loss: str, huber_M: float, q: float) -> cp.Expression:
-    """Convex loss for the residual component x1.
+def _resolve_residual_loss(residual_loss):
+    """Resolve a residual-loss specifier to a callable ``x1 -> scalar``.
+
+    Accepts either a callable (returned unchanged) or one of the string preset
+    names, which map to the factories in :mod:`data_fidelity`. Passing a
+    callable is the general case; the strings are convenience aliases for the
+    most common losses.
 
     Parameters
     ----------
-    x1 : cvxpy.Variable
-        The residual variable, length ``T``.
-    loss : str
-        One of ``"l2"`` (mean-square-small, the framework default),
-        ``"l1"`` (sum-absolute / robust), ``"huber"`` (robust), or
-        ``"quantile"`` (pinball / asymmetric).
-    huber_M : float
-        Huber threshold; used only when ``loss="huber"``.
-    q : float
-        Quantile level in (0, 1); used only when ``loss="quantile"``.
+    residual_loss : callable or str
+        A convex ``loss_fn(x1) -> scalar cvxpy expression``, or one of
+        ``"l2"``, ``"l1"``, ``"huber"``, ``"quantile"`` (using default
+        parameters). For non-default preset parameters (e.g. a specific Huber
+        threshold or quantile level), pass the factory result directly, e.g.
+        ``residual_loss=huber_loss(M=0.5)``.
 
     Returns
     -------
-    cvxpy.Expression
-        Scalar convex loss, normalized by ``T``.
+    callable
+        ``loss_fn(x1) -> scalar cvxpy expression``.
     """
-    n = x1.shape[0]
-    if loss == "l2":
-        return (1.0 / n) * cp.sum_squares(x1)
-    if loss == "l1":
-        return (1.0 / n) * cp.norm1(x1)
-    if loss == "huber":
-        return (1.0 / n) * cp.sum(cp.huber(x1, huber_M))
-    if loss == "quantile":
-        return (2.0 / n) * (q * cp.sum(cp.pos(x1)) + (1 - q) * cp.sum(cp.pos(-x1)))
+    if callable(residual_loss):
+        return residual_loss
+    presets = {
+        "l2": data_fidelity.l2_loss,
+        "l1": data_fidelity.l1_loss,
+        "huber": data_fidelity.huber_loss,
+        "quantile": data_fidelity.quantile_loss,
+    }
+    if residual_loss in presets:
+        return presets[residual_loss]()
     raise ValueError(
-        f"loss must be 'l2', 'l1', 'huber', or 'quantile'; got {loss!r}"
+        f"residual_loss must be a callable or one of {sorted(presets)}; "
+        f"got {residual_loss!r}"
     )
 
 
 def make_problem(
     y: np.ndarray,
     components: list[Component],
-    residual_loss: str = "l2",
-    huber_M: float = 1.0,
-    q: float = 0.5,
+    residual_loss="l2",
 ) -> dict:
     """Build the masked signal-decomposition problem.
 
@@ -120,13 +123,13 @@ def make_problem(
         excluded from the linking constraint.
     components : list of Component
         Structural components (x2, ..., xK), in order.
-    residual_loss : str
-        Loss for the residual x1: ``"l2"`` (default), ``"l1"``, ``"huber"``,
-        or ``"quantile"``.
-    huber_M : float
-        Huber threshold; used only when ``residual_loss="huber"``.
-    q : float
-        Quantile level in (0, 1); used only when ``residual_loss="quantile"``.
+    residual_loss : callable or str
+        Convex loss for the residual x1. Any DCP-compliant
+        ``loss_fn(x1) -> scalar cvxpy expression`` is accepted; this is the
+        general, extensible case. The strings ``"l2"`` (default), ``"l1"``,
+        ``"huber"``, ``"quantile"`` are convenience aliases for the presets in
+        :mod:`data_fidelity` with default parameters. For non-default parameters,
+        pass the factory result, e.g. ``residual_loss=huber_loss(M=0.5)``.
 
     Returns
     -------
@@ -156,7 +159,8 @@ def make_problem(
 
     # x1: the residual, always index 1.
     x1 = cp.Variable(T, name="residual")
-    objective = _residual_loss(x1, residual_loss, huber_M, q)
+    loss_fn = _resolve_residual_loss(residual_loss)
+    objective = loss_fn(x1)
     total = x1
 
     variables: dict[str, cp.Expression] = {"residual": x1}
@@ -184,7 +188,7 @@ def make_problem(
         "variables": variables,
         "residual": x1,
         "mask": mask,
-        "args": {"residual_loss": residual_loss, "huber_M": huber_M, "q": q},
+        "args": {"residual_loss": residual_loss},
     }
 
 
@@ -230,13 +234,24 @@ def solve(
     problem.solve(solver=solver, **solve_kwargs)
     if problem.status not in _OPTIMAL_STATUSES:
         raise ValueError(f"solver did not converge: status={problem.status!r}")
-    values = {
-        role: (expr.value if expr.value is None or expr.value.ndim else float(expr.value))
-        if hasattr(expr, "value") and expr.value is not None and np.ndim(expr.value) == 0
-        else expr.value
-        for role, expr in built["variables"].items()
-    }
+    values = {role: _solved_value(expr) for role, expr in built["variables"].items()}
     return {**built, "status": problem.status, "values": values}
+
+
+def _solved_value(expr: cp.Expression):
+    """Return a component's solved value as a plain float or numpy array.
+
+    CVXPY returns a 0-d ndarray for scalar variables; collapse those to a
+    Python float so scalar aux quantities (e.g. a trend slope) read naturally
+    downstream. Vector components are returned as their numpy array. ``None``
+    (unsolved) passes through unchanged.
+    """
+    value = expr.value
+    if value is None:
+        return None
+    if np.ndim(value) == 0:
+        return float(value)
+    return value
 
 
 # ---------------------------------------------------------------------------
