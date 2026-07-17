@@ -14,6 +14,87 @@ three layers: (1) an invariant substrate, (2) translation-IN (domain intent ->
 components/losses/transforms), (3) translation-OUT (wiring solve outputs to
 extraction / CI / stability / reporting / plotting / the user's own packages).
 
+---
+
+## PROGRESS & DECISIONS LOG (living section — read this first)
+
+**Status as of this session:** the core Python library layer is built, tested
+(24 passing tests), and committed. Prose (`SKILL.md`, `reference/`), the
+time-axis / heatmap / reporting layer, the validation layer, and examples are
+not yet built. Several original-plan details below are SUPERSEDED — see notes.
+
+### Built & committed
+
+- **Package layout: `src/signaldecomp/` (installable, src-layout, editable
+  install).** SUPERSEDES the flat `scripts/` layout drawn in the File Tree
+  below. Absolute intra-package imports throughout. Curated public API in
+  `__init__.py`. Rationale: clean imports, testability, and readiness for a
+  possible future thin MCP-server wrapper (skill is the primary product; the
+  server is deferred and does NOT drive design).
+- **`decompose.py`** — keystone: `make_problem(y, components, residual_loss)` +
+  `solve(built, solver=CLARABEL, verify_dcp=True)` + `Component` dataclass
+  (`role` + `build(T)->(expr,loss,cons)` + `aux`). x1-residual and masked
+  linking equality enforced by construction. `residual_loss` is CALLABLE-FIRST
+  (any DCP-compliant `loss_fn(x1)->scalar`); string names are convenience
+  aliases. SUPERSEDES the hard-coded 4-loss menu idea.
+- **`data_fidelity.py`** — φ_1 loss factories (`l2_loss`, `l1_loss`,
+  `huber_loss(M)`, `quantile_loss(q)`); presets + patterns for custom losses.
+  (Named `data_fidelity`, not `losses`: every component has a loss; this is
+  specifically the residual's data-fidelity term.)
+- **`basis.py`** — Fourier basis + regularization matrices, VENDORED from spcqe
+  (github.com/cvxgrp/spcqe) and trimmed (trend option removed; standing_wave +
+  custom_basis kept). **spcqe dependency REMOVED.** SUPERSEDES invariant #7's
+  "built with spcqe" and the dependency list's `spcqe`.
+- **`periodic.py`** — `multiperiodic(periods, num_harmonics, weight, role=
+  "periodic")` (RENAMED from `fourier_seasonal`; makes no domain assumption).
+  Float periods, DC column dropped by construction. `period_samples()` +
+  SECONDS_PER_{DAY,WEEK,YEAR} helpers. Multi-period builds one wider `B @ theta`
+  with cross-terms (NOT a different object — "tensor basis" framing retracted;
+  see notes-spcqe-multiperiod.md).
+- **`components.py`** — convex catalog: `linear_trend`, `smooth_trend`,
+  `pwl_trend`, `monotone_trend`, `sparse`, `bounded`/`nonneg` wrappers, plus
+  `exog_linear(z, ...)` and `exog_spline(z, ...)` (exogenous covariate
+  components; covariate captured in factory closure; lag-0 only). Re-exports
+  `multiperiodic`.
+- **`spline.py`** — natural cubic spline basis, VENDORED from the TSGAM
+  estimator (Alliance for Sustainable Energy / Nimish Telang, BSD-3).
+- **`validation.py`** — domain-agnostic validation, parameterized by a
+  `build_fn(y)->built` (rebuild on new data) and an
+  `extractor(out)->scalar|dict` (quantity of interest). Generalized from the
+  RdTools PV-degradation reference with domain specifics removed:
+  - `bootstrap_ci`: moving-block residual bootstrap, mask-preserving;
+    `block_size` is REQUIRED (no default — must match the residual's remaining
+    dependence; the agent helps the user pick from time scales/components).
+    Defaults: 500 resamples, 68.2% (1σ), min-success-fraction 0.5.
+  - `expanding_window_stability` + `valid_endpoints`: growing-window refits,
+    endpoints snapped to observed samples, between-window deltas, and
+    "stay-within-tol-of-final" convergence. `min_window`/`step`/`tol` explicit.
+  - `holdout_select`: contiguous-block hold-out model selection via the native
+    masking mechanism; scores imputation of held-out truth (rmse/mae) against
+    the reconstruction; takes `{name: build_fn}` candidates.
+- **`tests/`** — real pytest suite (`test_decompose`, `test_periodic`,
+  `test_components`, `test_exog`, `test_validation`), **38 tests**. SUPERSEDES
+  per-module `__main__` smoke tests (removed).
+- **Dependencies (actual):** cvxpy, numpy, pandas, matplotlib, scipy; dev:
+  pytest. NO spcqe, NO seaborn.
+
+### Next up
+
+- Time-axis + heatmap layer (`time_axis.py`, `heatmap.py`): standardize to a
+  regular grid, derive Δ, sub-daily fold diagnostic.
+- Reporting/plotting (`reporting.py`).
+- `SKILL.md` + `reference/` prose, once code contracts are final.
+- `examples/*.py`.
+
+### Naming note
+
+- Package is `signaldecomp`; repo/project is `cvx-signaldecomp-skill`.
+- The File Tree, invariant #7, Parameterization, and Dependencies sections
+  below are the ORIGINAL plan and are partially superseded as noted above; kept
+  for the design intent they still carry.
+
+---
+
 ## Hard scope (V1)
 
 - **Scalar (1-D) time series only** (`p=1`), input vector `y` of shape `(T,)`.

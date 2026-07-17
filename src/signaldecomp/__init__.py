@@ -38,6 +38,12 @@ from signaldecomp.data_fidelity import (
 )
 from signaldecomp.decompose import Component, make_problem, solve
 from signaldecomp.periodic import period_samples
+from signaldecomp.validation import (
+    bootstrap_ci,
+    expanding_window_stability,
+    holdout_select,
+    valid_endpoints,
+)
 
 __all__ = [
     # core
@@ -62,4 +68,9 @@ __all__ = [
     "l1_loss",
     "huber_loss",
     "quantile_loss",
+    # validation
+    "bootstrap_ci",
+    "expanding_window_stability",
+    "holdout_select",
+    "valid_endpoints",
 ]
