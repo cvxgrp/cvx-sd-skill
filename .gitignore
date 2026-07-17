@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# uv / virtualenv
+.venv/
+
+# OS / editor
+.DS_Store
+
+# Generated artifacts from examples/scripts (plots, animations, reports)
+*.png
+*.mp4
+*.gif
