@@ -1,0 +1,316 @@
+"""Canonical masked signal-decomposition problem builder (CVXPY).
+
+This module is the keystone of the skill. It builds the convex signal
+decomposition (SD) problem
+
+    minimize    phi_1(x1) + phi_2(x2) + ... + phi_K(xK)
+    subject to  y == x1 + x2 + ... + xK   (over observed entries only)
+
+following the Meyers & Boyd framework, with two invariants enforced *by
+construction*:
+
+1. **x1 is always the residual** (mean-square-small, or a robust variant).
+   Structural components are x2, x3, ... and are appended in order, so
+   extending a model never renumbers anything.
+2. **Missing data is native.** The linking (consistency) equality is imposed
+   only on observed entries via a boolean mask; unobserved entries (NaN in
+   ``y``) are simply not constrained. Held-out validation data is the *same*
+   mechanism -- mask a known entry and score the imputed value against truth.
+
+Components are represented as plain callables (see :class:`Component`) that,
+given the series length ``T``, return their CVXPY variable/expression, loss,
+and constraints. The richer catalog of convex component builders lives in
+``components.py``; this module only defines the residual and the assembly.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable
+
+import cvxpy as cp
+import numpy as np
+
+_OPTIMAL_STATUSES = ("optimal", "optimal_inaccurate")
+
+
+@dataclass
+class Component:
+    """A structural signal-decomposition component.
+
+    A component is defined by a ``build`` callable that, given the series
+    length ``T``, returns the tuple ``(expr, loss, constraints)`` where
+
+    - ``expr`` is the component signal as a CVXPY expression of length ``T``
+      (typically a ``cp.Variable(T)`` directly, or e.g. ``B @ theta`` for a
+      basis component),
+    - ``loss`` is a scalar CVXPY expression (the convex penalty phi_k), and
+    - ``constraints`` is a list of CVXPY constraints (possibly empty).
+
+    Parameters
+    ----------
+    role : str
+        Semantic name for the component (e.g. ``"trend"``, ``"seasonal"``).
+        Downstream tools reference components by role, never by index.
+    build : callable
+        ``build(T) -> (expr, loss, constraints)``.
+    aux : dict, optional
+        Extra named CVXPY expressions to expose in the result (e.g. basis
+        coefficients, trend slope), keyed by name.
+    """
+
+    role: str
+    build: Callable[[int], tuple[cp.Expression, cp.Expression, list]]
+    aux: dict[str, cp.Expression] = field(default_factory=dict)
+
+
+def _residual_loss(x1: cp.Variable, loss: str, huber_M: float, q: float) -> cp.Expression:
+    """Convex loss for the residual component x1.
+
+    Parameters
+    ----------
+    x1 : cvxpy.Variable
+        The residual variable, length ``T``.
+    loss : str
+        One of ``"l2"`` (mean-square-small, the framework default),
+        ``"l1"`` (sum-absolute / robust), ``"huber"`` (robust), or
+        ``"quantile"`` (pinball / asymmetric).
+    huber_M : float
+        Huber threshold; used only when ``loss="huber"``.
+    q : float
+        Quantile level in (0, 1); used only when ``loss="quantile"``.
+
+    Returns
+    -------
+    cvxpy.Expression
+        Scalar convex loss, normalized by ``T``.
+    """
+    n = x1.shape[0]
+    if loss == "l2":
+        return (1.0 / n) * cp.sum_squares(x1)
+    if loss == "l1":
+        return (1.0 / n) * cp.norm1(x1)
+    if loss == "huber":
+        return (1.0 / n) * cp.sum(cp.huber(x1, huber_M))
+    if loss == "quantile":
+        return (2.0 / n) * (q * cp.sum(cp.pos(x1)) + (1 - q) * cp.sum(cp.pos(-x1)))
+    raise ValueError(
+        f"loss must be 'l2', 'l1', 'huber', or 'quantile'; got {loss!r}"
+    )
+
+
+def make_problem(
+    y: np.ndarray,
+    components: list[Component],
+    residual_loss: str = "l2",
+    huber_M: float = 1.0,
+    q: float = 0.5,
+) -> dict:
+    """Build the masked signal-decomposition problem.
+
+    Assembles ``y = x1 + x2 + ... + xK`` where ``x1`` is the residual
+    (index 1, always) and ``components`` supply the structural terms
+    ``x2, ..., xK`` in order. The consistency equality is imposed only on
+    the observed (non-NaN) entries of ``y``.
+
+    Parameters
+    ----------
+    y : numpy.ndarray, shape (T,)
+        Observed scalar signal. ``NaN`` entries are treated as missing and
+        excluded from the linking constraint.
+    components : list of Component
+        Structural components (x2, ..., xK), in order.
+    residual_loss : str
+        Loss for the residual x1: ``"l2"`` (default), ``"l1"``, ``"huber"``,
+        or ``"quantile"``.
+    huber_M : float
+        Huber threshold; used only when ``residual_loss="huber"``.
+    q : float
+        Quantile level in (0, 1); used only when ``residual_loss="quantile"``.
+
+    Returns
+    -------
+    dict
+        Keys:
+
+        - ``"problem"`` : the :class:`cvxpy.Problem` (call ``.solve()`` first).
+        - ``"variables"`` : dict mapping role -> CVXPY expression, including
+          ``"residual"`` for x1, plus any component ``aux`` expressions.
+        - ``"residual"`` : the residual variable x1 (also under
+          ``variables["residual"]``).
+        - ``"mask"`` : boolean array of observed entries.
+        - ``"args"`` : the scalar build arguments, for reproducible re-builds.
+
+    Notes
+    -----
+    Roles must be unique; a duplicate role raises ``ValueError``. The residual
+    role name ``"residual"`` is reserved.
+    """
+    y = np.asarray(y, dtype=float)
+    if y.ndim != 1:
+        raise ValueError(f"V1 supports scalar (1-D) signals only; got ndim={y.ndim}.")
+    T = y.shape[0]
+    mask = ~np.isnan(y)
+    if not mask.any():
+        raise ValueError("y has no observed (non-NaN) entries.")
+
+    # x1: the residual, always index 1.
+    x1 = cp.Variable(T, name="residual")
+    objective = _residual_loss(x1, residual_loss, huber_M, q)
+    total = x1
+
+    variables: dict[str, cp.Expression] = {"residual": x1}
+    constraints: list = []
+    seen_roles = {"residual"}
+
+    for comp in components:
+        if comp.role in seen_roles:
+            raise ValueError(f"duplicate component role {comp.role!r}")
+        seen_roles.add(comp.role)
+        expr, loss, cons = comp.build(T)
+        objective = objective + loss
+        constraints.extend(cons)
+        total = total + expr
+        variables[comp.role] = expr
+        for aux_name, aux_expr in comp.aux.items():
+            variables[aux_name] = aux_expr
+
+    # Masked linking / consistency equality: observed entries only.
+    constraints.append(y[mask] == total[mask])
+
+    problem = cp.Problem(cp.Minimize(objective), constraints)
+    return {
+        "problem": problem,
+        "variables": variables,
+        "residual": x1,
+        "mask": mask,
+        "args": {"residual_loss": residual_loss, "huber_M": huber_M, "q": q},
+    }
+
+
+def solve(
+    built: dict,
+    solver: str = cp.CLARABEL,
+    verify_dcp: bool = True,
+    **solve_kwargs,
+) -> dict:
+    """Solve a built decomposition problem and return solved component values.
+
+    Parameters
+    ----------
+    built : dict
+        The return value of :func:`make_problem`.
+    solver : str
+        CVXPY solver to use. Defaults to CLARABEL. Always overridable.
+    verify_dcp : bool
+        If True (default), assert the problem is DCP before solving. DCP
+        compliance is the "verifiable target" guarantee: a malformed convex
+        model is caught here rather than producing a meaningless solution.
+    **solve_kwargs
+        Passed through to ``problem.solve``.
+
+    Returns
+    -------
+    dict
+        The ``built`` dict augmented with:
+
+        - ``"status"`` : solver status string.
+        - ``"values"`` : dict role -> solved numpy array (or scalar for aux
+          scalars).
+
+    Raises
+    ------
+    ValueError
+        If the problem is not DCP (when ``verify_dcp``), or the solver does
+        not reach an (inaccurate-)optimal status.
+    """
+    problem = built["problem"]
+    if verify_dcp and not problem.is_dcp():
+        raise ValueError("problem is not DCP; check component losses/constraints.")
+    problem.solve(solver=solver, **solve_kwargs)
+    if problem.status not in _OPTIMAL_STATUSES:
+        raise ValueError(f"solver did not converge: status={problem.status!r}")
+    values = {
+        role: (expr.value if expr.value is None or expr.value.ndim else float(expr.value))
+        if hasattr(expr, "value") and expr.value is not None and np.ndim(expr.value) == 0
+        else expr.value
+        for role, expr in built["variables"].items()
+    }
+    return {**built, "status": problem.status, "values": values}
+
+
+# ---------------------------------------------------------------------------
+# Minimal component builders used by the smoke test. The full convex catalog
+# lives in components.py; these are here only so this module is runnable and
+# testable on its own.
+# ---------------------------------------------------------------------------
+
+
+def _smooth_trend(lam: float) -> Component:
+    """Second-difference-small trend component (mean-square smooth)."""
+
+    def build(T: int):
+        x = cp.Variable(T, name="trend")
+        loss = lam * cp.sum_squares(cp.diff(x, k=2))
+        return x, loss, []
+
+    return Component(role="trend", build=build)
+
+
+def _smooth_periodic(period: int, lam: float) -> Component:
+    """Exact-periodic, circularly-smooth component (placeholder for spcqe)."""
+
+    def build(T: int):
+        x = cp.Variable(T, name="seasonal")
+        # circular smoothness within one period
+        idx = np.arange(T)
+        cons = [x[idx[period:]] == x[idx[:-period]]]
+        first = x[:period]
+        # Zero-mean anchor: resolves the DC offset non-uniqueness between the
+        # periodic component and the trend (manuscript sec 2.3). Without it, a
+        # constant sloshes freely between the two components.
+        cons.append(cp.sum(first) == 0)
+        # smoothness on the first period, taken circularly
+        loss = lam * (
+            cp.sum_squares(cp.diff(first)) + cp.sum_squares(first[0] - first[-1])
+        )
+        return x, loss, cons
+
+    return Component(role="seasonal", build=build)
+
+
+if __name__ == "__main__":
+    # Smoke test: synthetic trend + seasonal + noise, with a gap, recovered.
+    rng = np.random.default_rng(0)
+    T = 600
+    P = 50
+    t = np.arange(T)
+    true_trend = 0.002 * t
+    true_seasonal = 0.5 * np.sin(2 * np.pi * t / P)
+    noise = 0.05 * rng.standard_normal(T)
+    y = true_trend + true_seasonal + noise
+    y[200:230] = np.nan  # a gap the mask must handle
+
+    built = make_problem(
+        y,
+        components=[_smooth_periodic(P, lam=1e-1), _smooth_trend(lam=1e2)],
+        residual_loss="l2",
+    )
+    out = solve(built)
+
+    trend_hat = out["values"]["trend"]
+    seasonal_hat = out["values"]["seasonal"]
+    resid = out["values"]["residual"]
+
+    trend_rmse = np.sqrt(np.mean((trend_hat - true_trend) ** 2))
+    seas_rmse = np.sqrt(np.mean((seasonal_hat - true_seasonal) ** 2))
+
+    print(f"status:        {out['status']}")
+    print(f"trend RMSE:    {trend_rmse:.4f}")
+    print(f"seasonal RMSE: {seas_rmse:.4f}")
+    # Residual is zero on unobserved entries by construction (not constrained).
+    print(f"resid on gap:  max|.| = {np.max(np.abs(resid[200:230])):.2e}")
+    assert out["status"] in _OPTIMAL_STATUSES
+    assert trend_rmse < 0.05, trend_rmse
+    assert seas_rmse < 0.05, seas_rmse
+    print("OK")
