@@ -37,6 +37,12 @@ from signaldecomp.data_fidelity import (
     quantile_loss,
 )
 from signaldecomp.decompose import Component, make_problem, solve
+from signaldecomp.heatmap import (
+    fold_from_standardized,
+    fold_to_2d,
+    plot_heatmap,
+    steps_per_day,
+)
 from signaldecomp.periodic import period_samples
 from signaldecomp.time_axis import (
     derive_delta,
@@ -74,6 +80,11 @@ __all__ = [
     "derive_delta",
     "scan_rates",
     "nearest_standard_freq",
+    # heat-map diagnostic
+    "fold_to_2d",
+    "fold_from_standardized",
+    "steps_per_day",
+    "plot_heatmap",
     # data-fidelity losses
     "l2_loss",
     "l1_loss",

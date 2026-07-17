@@ -18,10 +18,10 @@ extraction / CI / stability / reporting / plotting / the user's own packages).
 
 ## PROGRESS & DECISIONS LOG (living section — read this first)
 
-**Status as of this session:** the core Python library layer is built, tested
-(24 passing tests), and committed. Prose (`SKILL.md`, `reference/`), the
-time-axis / heatmap / reporting layer, the validation layer, and examples are
-not yet built. Several original-plan details below are SUPERSEDED — see notes.
+**Status:** the core library, validation, time-axis, and heat-map layers are
+built, tested (**59 passing tests**), and committed. Still to build:
+reporting/plotting, prose (`SKILL.md`, `reference/`), and `examples/`. Several
+original-plan details below are SUPERSEDED — see notes.
 
 ### Built & committed
 
@@ -92,24 +92,44 @@ not yet built. Several original-plan details below are SUPERSEDED — see notes.
     return dict gains `"freq"`.
   - **DST:** module carries a WARNING to supply *local standard time, no DST*
     (a fixed-second grid can't represent 23h/25h DST days). To expand in the MD.
+- **API contracts (as built; prose will formalize these):**
+  - `solve(built) -> {..., "status", "values"}`; `values` maps role -> solved
+    numpy array, PLUS each component's `aux` entries. `values["residual"]` is x1.
+  - **`aux` naming convention:** components expose extra named quantities keyed
+    `"<role>_<name>"` (e.g. `periodic_theta`, `trend_a`/`trend_b`,
+    `<role>_beta`/`_coef`). Downstream keys off these role-based names.
+  - **Scalar collapse (`_solved_value`):** scalar aux (e.g. a slope) come back
+    as plain Python floats, not 0-d arrays; vectors as numpy arrays.
+  - **`bounded`/`nonneg` wrappers share the inner component's `role` and `aux`**
+    (bounding a trend still exposes its slope); they add constraints, not loss.
+- **`heatmap.py`** — sub-daily fold diagnostic. `fold_to_2d(y, delta)` folds a
+  1-D signal (raw `y` OR any solved component array) into a (time-of-day x day)
+  matrix via `reshape(n_steps, -1, order='F')`, `n_steps=round(86400/delta)`.
+  Guards: whole-days divisibility, sub-daily-only (delta<=86400), day-evenly-
+  divides. Trims all-NaN edge days. `fold_from_standardized(std_out)` wraps the
+  time_axis dict. `plot_heatmap(D, signed=...)`: `plasma` for non-negative;
+  `signed=True` -> `seismic` + `TwoSlopeNorm(vcenter=0)` (zero=white) for
+  residuals/signed components; NaN gaps render gray (`with_extremes(bad=)`),
+  month/year tick logic kept. Lifted from PV `make_2d`/`plot_2d`; clear-day /
+  power labels and **seaborn** DROPPED. Human visual review via
+  `scratch/visual_heatmap.py` (signed off).
 - **`tests/`** — real pytest suite (`test_decompose`, `test_periodic`,
-  `test_components`, `test_exog`, `test_validation`, `test_time_axis`),
-  **48 tests**. SUPERSEDES per-module `__main__` smoke tests (removed).
+  `test_components`, `test_exog`, `test_validation`, `test_time_axis`,
+  `test_heatmap`), **59 tests**. Plot code has Agg-backend smoke tests +
+  human visual review (see `scratch/`). SUPERSEDES per-module `__main__` tests.
 - **Dependencies (actual):** cvxpy, numpy, pandas, matplotlib, scipy; dev:
   pytest. NO spcqe, NO seaborn.
 
 ### IN FLIGHT (resume here)
 
-- `time_axis.py` complete, tested (48 pass), and wired into the public API
-  (`standardize_time_axis`, `derive_delta`, `scan_rates`,
-  `nearest_standard_freq`). Commit pending (no signature); nothing else
-  pending on it. Next module: `heatmap.py`.
+- `heatmap.py` complete, tested (59 pass), visually reviewed (signed off), and
+  wired into the public API. Being committed now (no signature). Next module:
+  `reporting.py` (markdown reports + plots + pandas round-trip).
 
 ### Next up
 
-- `heatmap.py`: sub-daily fold diagnostic; consumes Δ (`n_steps =
-  round(86400/Δ)`), fold via `reshape(n_steps, -1, order='F')`, NaNs as gaps.
-- Reporting/plotting (`reporting.py`).
+- Reporting/plotting (`reporting.py`): markdown reports + decomposition/stability
+  plots + pandas round-trip (re-wrap outputs on the original index).
 - `SKILL.md` + `reference/` prose, once code contracts are final.
 - `examples/*.py`.
 
@@ -147,11 +167,15 @@ not yet built. Several original-plan details below are SUPERSEDED — see notes.
    `floor`/round happens **as late as possible**. Yearly period = 365.2425
    physical days. Leap days left in, not special-cased.
 7. **Periodic components via truncated Fourier** (real-valued float period),
-   built with `spcqe` (`make_basis_matrix`, `make_regularization_matrix`);
-   the DC column is dropped (offset carried by trend intercept).
-8. **`Δ` derivation:** modal (most-common) rounded inter-sample gap, in
-   **seconds** (canonical internal unit). Use total-seconds semantics
-   (`.seconds` truncates at day boundaries -- footgun).
+   built with the **vendored** `basis.py` (`make_basis_matrix`,
+   `make_regularization_matrix`; from spcqe, spcqe dependency removed); the DC
+   column is dropped (offset carried by trend intercept).
+8. **`Δ` derivation:** modal (most-common) inter-sample gap in **seconds**
+   (canonical internal unit), via **relative-tolerance clustering** of gaps
+   (not fixed rounding), then **snapped to the nearest standard pandas
+   frequency within 1%** (else kept empirical). Measured with
+   `Timedelta.total_seconds()` (`.seconds` wraps at day boundaries -- footgun).
+   Fixed-duration table capped at daily (`"D"`=86400); coarser is refused.
 
 ## Parameterization
 
@@ -161,20 +185,30 @@ not yet built. Several original-plan details below are SUPERSEDED — see notes.
   re-solve** -- they change `y`/`T`, not just a weight, so Parameter reuse
   doesn't apply.
 
-## Downstream primitives (domain-agnostic, taught as operations on "a quantity
-extracted from a solve")
+## Downstream primitives (domain-agnostic; AS BUILT in `validation.py`)
 
-- **Extractor contract:** `extractor(variables, ...) -> dict[str, scalar|array]`.
-  Keys following a convention (e.g. prefix) get auto-bootstrapped.
-- **Confidence intervals:** moving-block bootstrap on residuals. Defaults:
-  1σ (`confidence_level=68.2`), 500 resamples, `block_size=int(T)` ~ 1 period,
-  min-success-fraction guard = 0.5. CIs on **derived scalar metrics**, not raw
-  components.
-- **Temporal stability:** expanding (forward) window snapped to valid
-  endpoints; track component snapshots, derived-quantity history, between-window
-  RMSD/delta, and convergence-within-tolerance.
-- **Reporting** (markdown) + **plotting** (decomposition panels, stability,
-  animation) + **pandas round-trip** (re-wrap outputs on the original index).
+All parameterized by two user callables (no domain assumptions):
+- **`build_fn(y) -> built`** — rebuilds the problem on new/modified data
+  (wraps the user's `make_problem(...)`). Data-varying loops rebuild, not
+  Parameter-reuse.
+- **`extractor(out) -> scalar | dict[str, scalar]`** — pulls the quantity(ies)
+  of interest from a `solve()` output dict. NO auto-by-prefix convention; the
+  user names quantities explicitly. Scalar or dict handled uniformly.
+
+- **`bootstrap_ci`:** moving-block residual bootstrap, mask-preserving.
+  `block_size` is **REQUIRED (no default)** — must match the residual's
+  remaining dependence. Defaults: 500 resamples, `confidence_level=68.2` (1σ),
+  `min_success_fraction=0.5`. Percentile CI per extracted key.
+- **`expanding_window_stability` + `valid_endpoints`:** expanding window snapped
+  to observed endpoints; per-window history, between-window |delta|, and
+  "stay-within-tol-of-final" convergence. `min_window`/`step`/`tol` explicit
+  (no magic time defaults).
+- **`holdout_select`:** `{name: build_fn}` candidates; single contiguous central
+  held-out block (V1; K-fold is roadmap), `holdout_fraction=0.2`; scores
+  imputation of held-out truth against the **reconstruction** (rmse/mae);
+  failed candidates score NaN and are not selected.
+- **Reporting** (markdown) + **plotting** + **pandas round-trip** — NOT yet
+  built (see Next up).
 
 ## Input / exploration front-end
 
@@ -251,8 +285,8 @@ signal-decomposition/           (skill root -- exact dir name TBD)
 
 - Exact skill root directory name.
 - Whether to include the in-scope recontextualization example in V1 (lean: yes).
-- Dependencies to `uv add`: `cvxpy`, `spcqe`, `numpy`, `pandas`, `matplotlib`,
-  `scipy`, `seaborn` (confirm before adding).
+- Dependencies (RESOLVED, as built): `cvxpy`, `numpy`, `pandas`, `matplotlib`,
+  `scipy`; dev `pytest`. spcqe VENDORED (not a dep); seaborn NOT used.
 
 ## Testing posture
 
