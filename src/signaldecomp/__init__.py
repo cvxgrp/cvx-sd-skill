@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from signaldecomp.components import (
     bounded,
+    exog_linear,
+    exog_spline,
     linear_trend,
     monotone_trend,
     multiperiodic,
@@ -49,6 +51,8 @@ __all__ = [
     "pwl_trend",
     "monotone_trend",
     "sparse",
+    "exog_linear",
+    "exog_spline",
     "bounded",
     "nonneg",
     # periodic helpers
