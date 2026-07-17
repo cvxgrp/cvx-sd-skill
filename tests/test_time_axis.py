@@ -91,6 +91,23 @@ def test_standardize_refuses_coarser_than_daily():
         standardize_time_axis(pd.Series(np.arange(12.0), index=idx))
 
 
+def test_standardize_freq_daily_authoritative():
+    # Regression: freq="D" is a calendar offset that pd.Timedelta refuses; the
+    # authoritative path must resolve it to 86400 via the fixed-seconds table.
+    idx = pd.date_range("2020-01-01", periods=400, freq="D")
+    out = standardize_time_axis(pd.Series(np.arange(400.0), index=idx), freq="D")
+    assert out["delta"] == 86400.0
+    assert out["freq"] == "D"
+    assert out["index"][0] == pd.Timestamp("2020-01-01 00:00:00")
+
+
+def test_standardize_freq_rejects_calendar_offset():
+    # A coarser calendar offset (weekly) is out of scope for the fixed grid.
+    idx = pd.date_range("2020-01-01", periods=52, freq="7D")
+    with pytest.raises(ValueError, match="fixed-duration rate"):
+        standardize_time_axis(pd.Series(np.arange(52.0), index=idx), freq="W")
+
+
 def test_standardize_dataframe_requires_value_column_when_ambiguous():
     idx = pd.date_range("2021-01-01", periods=10, freq="h")
     df = pd.DataFrame({"a": np.arange(10.0), "b": np.arange(10.0)}, index=idx)

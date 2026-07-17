@@ -44,6 +44,11 @@ from signaldecomp.heatmap import (
     steps_per_day,
 )
 from signaldecomp.periodic import period_samples
+from signaldecomp.reporting import (
+    components_to_frame,
+    plot_decomposition,
+    plot_stability,
+)
 from signaldecomp.time_axis import (
     derive_delta,
     nearest_standard_freq,
@@ -95,4 +100,8 @@ __all__ = [
     "expanding_window_stability",
     "holdout_select",
     "valid_endpoints",
+    # reporting (pandas round-trip + plots)
+    "components_to_frame",
+    "plot_decomposition",
+    "plot_stability",
 ]

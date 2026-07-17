@@ -22,3 +22,15 @@ plots can be re-reviewed after any change.
 
   Open the printed PNG path to review. Re-run after any change to
   `heatmap.py` plotting.
+
+- **`visual_reporting.py`** -- renders `decomposition.png` (stacked signal+fit /
+  per-role / signed-residual panels) and `stability.png` (snapshot spaghetti +
+  normalized RMSD, plus scalar history/delta when an extractor is used) from
+  `signaldecomp.reporting`.
+
+  ```
+  uv run python scratch/visual_reporting.py
+  ```
+
+  Open the printed PNG paths to review. Re-run after any change to
+  `reporting.py` plotting.

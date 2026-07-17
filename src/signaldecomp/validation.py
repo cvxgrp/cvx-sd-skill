@@ -17,6 +17,7 @@ any decomposition.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 
 import numpy as np
@@ -197,20 +198,33 @@ def valid_endpoints(y, min_window, step):
     return snapped[snapped >= min_window]
 
 
+_SNAPSHOT_WARN_BYTES = 500 * 1024 * 1024  # ~500 MB: warn, do not block
+
+
 def expanding_window_stability(
     y,
     build_fn,
-    extractor,
     min_window,
     step,
-    tol,
+    tol=None,
+    extractor=None,
+    roles=None,
     solver=None,
 ):
-    """Track how extracted quantities stabilize as the data record grows.
+    """Track how the decomposition stabilizes as the data record grows.
 
-    Solves the decomposition on growing prefixes ``y[:n]`` (n from
-    :func:`valid_endpoints`), records the extracted quantity(ies) per window,
-    and reports between-window change and a convergence point.
+    Solves on growing prefixes ``y[:n]`` (n from :func:`valid_endpoints`). By
+    default it records, per window, the full solved **component curve** for each
+    structural role (NaN-padded beyond the window edge) and the normalized
+    between-window movement of each -- so stability is meaningful even for
+    shape-valued components (monotone/smooth/pwl trends) that have no natural
+    scalar summary.
+
+    Optionally, an ``extractor`` additionally tracks user-defined **scalar**
+    quantities over windows (value history, between-window |delta|, and a
+    convergence point) -- for the case where a meaningful scalar exists (e.g. a
+    linear-trend slope). Any domain math to reduce a curve to a scalar lives in
+    the user's extractor, not here.
 
     Parameters
     ----------
@@ -218,56 +232,142 @@ def expanding_window_stability(
         The full signal (NaN where missing).
     build_fn : callable
         ``build_fn(y_window) -> built``; rebuilt per window (T changes).
-    extractor : callable
-        ``extractor(out) -> scalar | dict``; the quantity(ies) to track.
     min_window : int
-        Minimum (first) window length in samples. REQUIRED -- no default;
-        choose from the data's time scales.
+        Minimum (first) window length in samples. REQUIRED.
     step : int
         Nominal spacing between window lengths, in samples.
-    tol : float
-        Convergence tolerance (same units as the extracted quantity). A
-        quantity is "converged" at the earliest window after which it stays
-        within ``tol`` of its final-window value for all later windows.
+    tol : float, optional
+        Convergence tolerance for the scalar ``extractor`` path (same units as
+        the extracted quantity). Required only if ``extractor`` is given.
+    extractor : callable, optional
+        ``extractor(out) -> scalar | dict``; scalar quantity(ies) to track in
+        addition to component snapshots. If None (default), only snapshots and
+        their normalized movement are recorded.
+    roles : sequence of str, optional
+        Which structural roles to snapshot. Default: all full-length structural
+        components (everything in ``values`` except the residual).
     solver : optional
         Passed through to :func:`solve` (default CLARABEL).
 
     Returns
     -------
     dict
-        - ``"windows"`` : ndarray of solved window lengths.
-        - ``"history"`` : dict key -> ndarray over windows (NaN where the solve
-          failed or the key was absent).
-        - ``"delta"``   : dict key -> ndarray of |change| between successive
-          windows.
-        - ``"converged_at"`` : dict key -> window length of convergence (or
-          None if it never settles within ``tol``).
-        - ``"tol"`` : the tolerance used.
+        - ``"windows"`` : ndarray (F,) of solved window lengths.
+        - ``"snapshots"`` : dict role -> ndarray (F, T); per-window component
+          curve, NaN beyond that window's edge (and where the solve failed).
+        - ``"rmsd"`` : dict role -> ndarray (F-1,); normalized RMS change
+          between successive windows over their overlap.
+        - ``"sdelta"`` : dict role -> ndarray (F-1,); normalized mean-absolute
+          change between successive windows over their overlap.
+        - ``"tol"`` : the tolerance used (or None).
+        - (only if ``extractor`` given) ``"history"``, ``"delta"``,
+          ``"converged_at"`` : dict key -> arrays / window-length, as for the
+          scalar quantities.
+
+    Warns
+    -----
+    UserWarning
+        If the snapshot arrays would allocate more than ~500 MB. Use ``roles``
+        to limit collection.
     """
+    if extractor is not None and tol is None:
+        raise ValueError("tol is required when an extractor is given.")
     y = np.asarray(y, dtype=float)
+    T = y.shape[0]
     windows = valid_endpoints(y, min_window, step)
     F = windows.size
 
     def _solve(sig):
         return solve(build_fn(sig)) if solver is None else solve(build_fn(sig), solver=solver)
 
-    per_window = []
-    keys = set()
+    # First pass: solve each window once; capture component values + optional
+    # extractor record. Determine the structural roles from the first success.
+    outs = []
+    scalar_recs = []
+    scalar_keys = set()
     for n in windows:
         try:
             out = _solve(y[:n])
-            rec = _as_dict(extractor(out)) if out["status"] in _OPTIMAL else None
+            ok = out["status"] in _OPTIMAL
         except Exception:
-            rec = None
-        per_window.append(rec)
-        if rec is not None:
-            keys.update(rec.keys())
+            out, ok = None, False
+        outs.append(out if ok else None)
+        if ok and extractor is not None:
+            rec = _as_dict(extractor(out))
+            scalar_recs.append(rec)
+            scalar_keys.update(rec.keys())
+        else:
+            scalar_recs.append(None)
 
-    history = {k: np.full(F, np.nan) for k in keys}
-    for i, rec in enumerate(per_window):
+    # Which roles to snapshot: full-length structural values (exclude residual).
+    def _structural_roles(out):
+        return [
+            r
+            for r, v in out["values"].items()
+            if r != "residual" and np.ndim(v) and np.asarray(v).shape == (len(v),)
+            and np.asarray(v).shape[0] == out["values"]["residual"].shape[0]
+        ]
+
+    first_ok = next((o for o in outs if o is not None), None)
+    if roles is None:
+        all_roles = _structural_roles(first_ok) if first_ok is not None else []
+    else:
+        all_roles = list(roles)
+
+    # Size warning (n_roles x F x T floats).
+    est_bytes = len(all_roles) * F * T * 8
+    if est_bytes > _SNAPSHOT_WARN_BYTES:
+        warnings.warn(
+            f"stability snapshots will allocate ~{est_bytes / 1e6:.0f} MB "
+            f"({len(all_roles)} roles x {F} windows x {T} samples). Pass "
+            f"roles=[...] to limit collection.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Collect snapshots: (F, T), NaN-padded beyond each window's edge.
+    snapshots = {r: np.full((F, T), np.nan) for r in all_roles}
+    for i, (out, n) in enumerate(zip(outs, windows)):
+        if out is None:
+            continue
+        for r in all_roles:
+            v = out["values"].get(r)
+            if v is not None and np.ndim(v) and np.asarray(v).shape[0] == n:
+                snapshots[r][i, :n] = np.asarray(v, dtype=float)
+
+    # Normalized between-window movement over the overlap (earlier window's n).
+    rmsd = {r: np.full(max(F - 1, 0), np.nan) for r in all_roles}
+    sdelta = {r: np.full(max(F - 1, 0), np.nan) for r in all_roles}
+    for r in all_roles:
+        snap = snapshots[r]
+        for i in range(F - 1):
+            a = snap[i, : windows[i]]
+            b = snap[i + 1, : windows[i]]
+            valid = ~(np.isnan(a) | np.isnan(b))
+            if valid.sum() < 2:
+                continue
+            diff = b[valid] - a[valid]
+            ref = a[valid]
+            rmsd[r][i] = np.sqrt(np.mean(diff**2)) / (np.sqrt(np.mean(ref**2)) + 1e-12)
+            sdelta[r][i] = np.mean(np.abs(diff)) / (np.mean(np.abs(ref)) + 1e-12)
+
+    result = {
+        "windows": windows,
+        "snapshots": snapshots,
+        "rmsd": rmsd,
+        "sdelta": sdelta,
+        "tol": tol,
+    }
+
+    if extractor is None:
+        return result
+
+    # Optional scalar path.
+    history = {k: np.full(F, np.nan) for k in scalar_keys}
+    for i, rec in enumerate(scalar_recs):
         if rec is None:
             continue
-        for k in keys:
+        for k in scalar_keys:
             if k in rec:
                 history[k][i] = rec[k]
 
@@ -295,13 +395,10 @@ def expanding_window_stability(
         else:
             converged_at[k] = int(windows[out_idx[-1] + 1])
 
-    return {
-        "windows": windows,
-        "history": history,
-        "delta": delta,
-        "converged_at": converged_at,
-        "tol": tol,
-    }
+    result["history"] = history
+    result["delta"] = delta
+    result["converged_at"] = converged_at
+    return result
 
 
 def holdout_select(

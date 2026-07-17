@@ -360,8 +360,22 @@ def standardize_time_axis(
 
     rates = scan_rates(df.index, rel_tol=rel_tol)
     if freq is not None:
-        # User-asserted nominal rate is authoritative.
-        delta = float(pd.Timedelta(pd.tseries.frequencies.to_offset(freq)).total_seconds())
+        # User-asserted nominal rate is authoritative. Prefer the fixed-seconds
+        # table (it defines "D"=86400, which pd.Timedelta refuses since <Day> is
+        # a calendar offset); fall back to pd.Timedelta for other fixed offsets.
+        if freq in _STANDARD_FREQS:
+            delta = float(_STANDARD_FREQS[freq])
+        else:
+            try:
+                delta = float(
+                    pd.Timedelta(pd.tseries.frequencies.to_offset(freq)).total_seconds()
+                )
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"freq={freq!r} is not a fixed-duration rate this helper can "
+                    f"use (calendar offsets like weekly/monthly are out of scope). "
+                    f"Use a sub-daily-to-daily fixed rate."
+                ) from exc
         grid_freq = freq
     else:
         # Empirical modal gap, snapped to the nearest standard rate (or kept).

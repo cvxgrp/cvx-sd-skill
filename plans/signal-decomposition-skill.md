@@ -18,10 +18,10 @@ extraction / CI / stability / reporting / plotting / the user's own packages).
 
 ## PROGRESS & DECISIONS LOG (living section — read this first)
 
-**Status:** the core library, validation, time-axis, and heat-map layers are
-built, tested (**59 passing tests**), and committed. Still to build:
-reporting/plotting, prose (`SKILL.md`, `reference/`), and `examples/`. Several
-original-plan details below are SUPERSEDED — see notes.
+**Status:** the core library, validation, time-axis, heat-map, and reporting
+layers are built, tested (**76 passing tests**), and committed. Still to build:
+prose (`SKILL.md`, `reference/`) and `examples/`. Several original-plan details
+below are SUPERSEDED — see notes.
 
 ### Built & committed
 
@@ -67,8 +67,13 @@ original-plan details below are SUPERSEDED — see notes.
     dependence; the agent helps the user pick from time scales/components).
     Defaults: 500 resamples, 68.2% (1σ), min-success-fraction 0.5.
   - `expanding_window_stability` + `valid_endpoints`: growing-window refits,
-    endpoints snapped to observed samples, between-window deltas, and
-    "stay-within-tol-of-final" convergence. `min_window`/`step`/`tol` explicit.
+    endpoints snapped to observed samples. **Component-curve SNAPSHOTS are the
+    default** (per-window solved curve for each structural role, NaN-padded, +
+    normalized between-window RMSD/mean-abs movement) — so stability works for
+    shape-valued components (monotone/smooth/pwl) with no natural scalar. An
+    optional `extractor` ADDS scalar history/`|delta|`/convergence (curve->scalar
+    domain math stays in the user's extractor). `roles=` filter; ~500MB snapshot
+    warning. `min_window`/`step` explicit; `tol` required only with `extractor`.
   - `holdout_select`: contiguous-block hold-out model selection via the native
     masking mechanism; scores imputation of held-out truth (rmse/mae) against
     the reconstruction; takes `{name: build_fn}` candidates.
@@ -113,25 +118,41 @@ original-plan details below are SUPERSEDED — see notes.
   month/year tick logic kept. Lifted from PV `make_2d`/`plot_2d`; clear-day /
   power labels and **seaborn** DROPPED. Human visual review via
   `scratch/visual_heatmap.py` (signed off).
+- **`reporting.py`** — translation-OUT. `components_to_frame(out, index=, y=,
+  mask=)`: re-wrap solved components as a DataFrame (one col per full-length
+  role + `residual` + `reconstruction`, `y` if passed; scalar/non-T aux
+  excluded). Imputed-dense by default; `mask=` restores NaN at unobserved
+  entries. `plot_decomposition(out, y=, index=, df=)`: stacked signal+fit /
+  per-role / signed-residual panels; local `rc_context` (no global style
+  mutation), colorblind cycle. `plot_stability(stability, role=)`: snapshot
+  spaghetti (plasma by window length) + normalized RMSD, plus scalar
+  history/delta panels when the run used an extractor. Generalized from PV
+  `plot_decomposition`/`plot_stability` (x1/x2/x3 -> role-based; %/yr, tableau
+  global-style, and `plot_trend` DROPPED). Visual review via
+  `scratch/visual_reporting.py` (signed off).
 - **`tests/`** — real pytest suite (`test_decompose`, `test_periodic`,
   `test_components`, `test_exog`, `test_validation`, `test_time_axis`,
-  `test_heatmap`), **59 tests**. Plot code has Agg-backend smoke tests +
-  human visual review (see `scratch/`). SUPERSEDES per-module `__main__` tests.
+  `test_heatmap`, `test_reporting`), **76 tests**. Plot code has Agg-backend
+  smoke tests + human visual review (see `scratch/`). SUPERSEDES per-module
+  `__main__` tests.
 - **Dependencies (actual):** cvxpy, numpy, pandas, matplotlib, scipy; dev:
   pytest. NO spcqe, NO seaborn.
 
 ### IN FLIGHT (resume here)
 
-- `heatmap.py` complete, tested (59 pass), visually reviewed (signed off), and
-  wired into the public API. Being committed now (no signature). Next module:
-  `reporting.py` (markdown reports + plots + pandas round-trip).
+- `reporting.py` complete (pandas round-trip + `plot_decomposition` +
+  `plot_stability`), tested (76 pass), visually reviewed (signed off), and wired
+  into the public API. Also in this batch: `expanding_window_stability` reworked
+  to snapshots-default, and a latent `time_axis` bug fixed (`freq="D"` calendar
+  offset couldn't go through `pd.Timedelta`; now uses the fixed-seconds table +
+  regression test). Being committed now (no signature). Next: prose + examples.
 
 ### Next up
 
-- Reporting/plotting (`reporting.py`): markdown reports + decomposition/stability
-  plots + pandas round-trip (re-wrap outputs on the original index).
-- `SKILL.md` + `reference/` prose, once code contracts are final.
+- `SKILL.md` + `reference/` prose, now that the code contracts are final.
 - `examples/*.py`.
+- (Deferred: markdown-report generation — `components_to_frame` + the two plots
+  cover the reporting need for now; a text/markdown summary can come with prose.)
 
 ### Naming note
 
@@ -207,8 +228,9 @@ All parameterized by two user callables (no domain assumptions):
   held-out block (V1; K-fold is roadmap), `holdout_fraction=0.2`; scores
   imputation of held-out truth against the **reconstruction** (rmse/mae);
   failed candidates score NaN and are not selected.
-- **Reporting** (markdown) + **plotting** + **pandas round-trip** — NOT yet
-  built (see Next up).
+- **Reporting** — BUILT in `reporting.py`: pandas round-trip
+  (`components_to_frame`) + `plot_decomposition` + `plot_stability`. (Markdown
+  text-report generation deferred to the prose phase.)
 
 ## Input / exploration front-end
 

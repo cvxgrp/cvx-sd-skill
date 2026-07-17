@@ -116,15 +116,15 @@ def test_valid_endpoints_no_observed_raises():
         valid_endpoints(np.full(50, np.nan), min_window=10, step=10)
 
 
-def test_expanding_window_tracks_and_converges():
+def test_expanding_window_scalar_extractor_tracks_and_converges():
     rng = np.random.default_rng(0)
     T = 500
     t = np.arange(T)
     y = 1.0 + 0.01 * t + 0.1 * rng.standard_normal(T)
     build_fn = lambda sig: make_problem(sig, components=[linear_trend(role="trend")])
     res = expanding_window_stability(
-        y, build_fn, lambda o: o["values"]["trend_b"],
-        min_window=100, step=50, tol=1e-3,
+        y, build_fn, min_window=100, step=50, tol=1e-3,
+        extractor=lambda o: o["values"]["trend_b"],
     )
     assert res["windows"][-1] == T
     hist = res["history"]["value"]
@@ -134,13 +134,71 @@ def test_expanding_window_tracks_and_converges():
     assert np.all(np.abs(hist - 0.01) < 5e-3)
     # a loose tolerance converges no later than a strict one
     res_loose = expanding_window_stability(
-        y, build_fn, lambda o: o["values"]["trend_b"],
-        min_window=100, step=50, tol=1e-2,
+        y, build_fn, min_window=100, step=50, tol=1e-2,
+        extractor=lambda o: o["values"]["trend_b"],
     )
     ca_strict = res["converged_at"]["value"]
     ca_loose = res_loose["converged_at"]["value"]
     assert ca_loose is not None and ca_strict is not None
     assert ca_loose <= ca_strict
+
+
+def test_expanding_window_snapshots_are_default():
+    # Without an extractor, snapshots + normalized movement are recorded for
+    # every structural role -- the default, curve-level stability story.
+    rng = np.random.default_rng(0)
+    T = 500
+    t = np.arange(T)
+    y = 1.0 + 0.01 * t + 0.1 * rng.standard_normal(T)
+    build_fn = lambda sig: make_problem(sig, components=[linear_trend(role="trend")])
+    res = expanding_window_stability(y, build_fn, min_window=100, step=50)
+    F = res["windows"].size
+    assert set(res["snapshots"].keys()) == {"trend"}
+    assert res["snapshots"]["trend"].shape == (F, T)
+    # each window's curve is filled up to its own length, NaN beyond
+    snap = res["snapshots"]["trend"]
+    for i, n in enumerate(res["windows"]):
+        assert np.all(np.isfinite(snap[i, :n]))
+        if n < T:
+            assert np.all(np.isnan(snap[i, n:]))
+    # movement metrics have length F-1 and are finite where overlap exists
+    assert res["rmsd"]["trend"].shape == (F - 1,)
+    assert res["sdelta"]["trend"].shape == (F - 1,)
+    assert np.all(np.isfinite(res["rmsd"]["trend"]))
+    # a growing linear trend should be quite stable window-to-window
+    assert np.all(res["rmsd"]["trend"] < 0.5)
+    # no scalar path without an extractor
+    assert "history" not in res
+
+
+def test_expanding_window_roles_filter():
+    rng = np.random.default_rng(2)
+    T = 400
+    t = np.arange(T)
+    y = 1.0 + 0.01 * t + 0.5 * np.sin(2 * np.pi * t / 50) + 0.1 * rng.standard_normal(T)
+    build_fn = lambda sig: make_problem(
+        sig,
+        components=[
+            linear_trend(role="trend"),
+            multiperiodic(50.0, num_harmonics=3, weight=1e-2, role="seas"),
+        ],
+    )
+    # default: both structural roles snapshotted
+    res = expanding_window_stability(y, build_fn, min_window=100, step=50)
+    assert set(res["snapshots"].keys()) == {"trend", "seas"}
+    # filter to just the trend
+    res2 = expanding_window_stability(y, build_fn, min_window=100, step=50, roles=["trend"])
+    assert set(res2["snapshots"].keys()) == {"trend"}
+
+
+def test_expanding_window_extractor_requires_tol():
+    y = 1.0 + 0.01 * np.arange(300)
+    build_fn = lambda sig: make_problem(sig, components=[linear_trend(role="trend")])
+    with pytest.raises(ValueError, match="tol is required"):
+        expanding_window_stability(
+            y, build_fn, min_window=100, step=50,
+            extractor=lambda o: o["values"]["trend_b"],
+        )
 
 
 def test_expanding_window_dict_extractor():
@@ -153,7 +211,9 @@ def test_expanding_window_dict_extractor():
     def multi(out):
         return {"slope": out["values"]["trend_b"], "intercept": out["values"]["trend_a"]}
 
-    res = expanding_window_stability(y, build_fn, multi, min_window=100, step=50, tol=1e-3)
+    res = expanding_window_stability(
+        y, build_fn, min_window=100, step=50, tol=1e-3, extractor=multi
+    )
     assert set(res["history"].keys()) == {"slope", "intercept"}
     assert set(res["converged_at"].keys()) == {"slope", "intercept"}
 
