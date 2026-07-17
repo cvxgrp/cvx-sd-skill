@@ -38,6 +38,12 @@ from signaldecomp.data_fidelity import (
 )
 from signaldecomp.decompose import Component, make_problem, solve
 from signaldecomp.periodic import period_samples
+from signaldecomp.time_axis import (
+    derive_delta,
+    nearest_standard_freq,
+    scan_rates,
+    standardize_time_axis,
+)
 from signaldecomp.validation import (
     bootstrap_ci,
     expanding_window_stability,
@@ -63,6 +69,11 @@ __all__ = [
     "nonneg",
     # periodic helpers
     "period_samples",
+    # time-axis standardization
+    "standardize_time_axis",
+    "derive_delta",
+    "scan_rates",
+    "nearest_standard_freq",
     # data-fidelity losses
     "l2_loss",
     "l1_loss",

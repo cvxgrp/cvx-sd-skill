@@ -72,16 +72,43 @@ not yet built. Several original-plan details below are SUPERSEDED — see notes.
   - `holdout_select`: contiguous-block hold-out model selection via the native
     masking mechanism; scores imputation of held-out truth (rmse/mae) against
     the reconstruction; takes `{name: build_fn}` candidates.
+- **`time_axis.py`** — standardize raw input to a regular grid. Emits dict
+  `{y, delta, index, scan_rates, series}`. Lifted from the PV `standardize_
+  time_axis`; solar-noon / tz-correction heuristics DROPPED (domain-agnostic).
+  Keeps: midnight-of-day-1 anchor, nearest-snap reindex (gaps->NaN->mask),
+  dedupe, total-seconds Δ (the `.seconds` 24h-wrap footgun avoided).
+  - **Δ / scan-rate detection uses RELATIVE-TOLERANCE clustering** (`rel_tol`,
+    default 0.02), NOT fixed-second rounding. SUPERSEDES invariant #8's "modal
+    *rounded* gap" and the source's `round_to_seconds=10`: fixed rounding
+    fragments jittered continuous timestamps; relative clustering does not.
+  - **Δ resolution (RESOLVED):** the empirical modal gap is snapped to the
+    nearest *standard pandas frequency* within **1%** (`snap_tol=0.01`) via
+    `nearest_standard_freq`, so jittered hourly (3599) -> `("h", 3600)`.
+    Non-standard rates (outside 1%) keep the empirical Δ with `freq=None`. A
+    user may pass `freq=<pandas string>` to assert the rate authoritatively.
+    Standard table is fixed-duration up to daily (`"D"`=86400 hard-coded);
+    **coarser than daily is REFUSED** (weekly/monthly need calendar-aware prep,
+    not a fixed-second grid). `delta_seconds` input dropped (Δ is an output);
+    return dict gains `"freq"`.
+  - **DST:** module carries a WARNING to supply *local standard time, no DST*
+    (a fixed-second grid can't represent 23h/25h DST days). To expand in the MD.
 - **`tests/`** — real pytest suite (`test_decompose`, `test_periodic`,
-  `test_components`, `test_exog`, `test_validation`), **38 tests**. SUPERSEDES
-  per-module `__main__` smoke tests (removed).
+  `test_components`, `test_exog`, `test_validation`, `test_time_axis`),
+  **48 tests**. SUPERSEDES per-module `__main__` smoke tests (removed).
 - **Dependencies (actual):** cvxpy, numpy, pandas, matplotlib, scipy; dev:
   pytest. NO spcqe, NO seaborn.
 
+### IN FLIGHT (resume here)
+
+- `time_axis.py` complete, tested (48 pass), and wired into the public API
+  (`standardize_time_axis`, `derive_delta`, `scan_rates`,
+  `nearest_standard_freq`). Commit pending (no signature); nothing else
+  pending on it. Next module: `heatmap.py`.
+
 ### Next up
 
-- Time-axis + heatmap layer (`time_axis.py`, `heatmap.py`): standardize to a
-  regular grid, derive Δ, sub-daily fold diagnostic.
+- `heatmap.py`: sub-daily fold diagnostic; consumes Δ (`n_steps =
+  round(86400/Δ)`), fold via `reshape(n_steps, -1, order='F')`, NaNs as gaps.
 - Reporting/plotting (`reporting.py`).
 - `SKILL.md` + `reference/` prose, once code contracts are final.
 - `examples/*.py`.
