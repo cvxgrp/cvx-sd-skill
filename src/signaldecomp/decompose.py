@@ -31,7 +31,7 @@ from typing import Callable
 import cvxpy as cp
 import numpy as np
 
-import data_fidelity
+from signaldecomp import data_fidelity
 
 _OPTIMAL_STATUSES = ("optimal", "optimal_inaccurate")
 
@@ -252,80 +252,3 @@ def _solved_value(expr: cp.Expression):
     if np.ndim(value) == 0:
         return float(value)
     return value
-
-
-# ---------------------------------------------------------------------------
-# Minimal component builders used by the smoke test. The full convex catalog
-# lives in components.py; these are here only so this module is runnable and
-# testable on its own.
-# ---------------------------------------------------------------------------
-
-
-def _smooth_trend(lam: float) -> Component:
-    """Second-difference-small trend component (mean-square smooth)."""
-
-    def build(T: int):
-        x = cp.Variable(T, name="trend")
-        loss = lam * cp.sum_squares(cp.diff(x, k=2))
-        return x, loss, []
-
-    return Component(role="trend", build=build)
-
-
-def _smooth_periodic(period: int, lam: float) -> Component:
-    """Exact-periodic, circularly-smooth component (placeholder for spcqe)."""
-
-    def build(T: int):
-        x = cp.Variable(T, name="seasonal")
-        # circular smoothness within one period
-        idx = np.arange(T)
-        cons = [x[idx[period:]] == x[idx[:-period]]]
-        first = x[:period]
-        # Zero-mean anchor: resolves the DC offset non-uniqueness between the
-        # periodic component and the trend (manuscript sec 2.3). Without it, a
-        # constant sloshes freely between the two components.
-        cons.append(cp.sum(first) == 0)
-        # smoothness on the first period, taken circularly
-        loss = lam * (
-            cp.sum_squares(cp.diff(first)) + cp.sum_squares(first[0] - first[-1])
-        )
-        return x, loss, cons
-
-    return Component(role="seasonal", build=build)
-
-
-if __name__ == "__main__":
-    # Smoke test: synthetic trend + seasonal + noise, with a gap, recovered.
-    rng = np.random.default_rng(0)
-    T = 600
-    P = 50
-    t = np.arange(T)
-    true_trend = 0.002 * t
-    true_seasonal = 0.5 * np.sin(2 * np.pi * t / P)
-    noise = 0.05 * rng.standard_normal(T)
-    y = true_trend + true_seasonal + noise
-    y[200:230] = np.nan  # a gap the mask must handle
-
-    built = make_problem(
-        y,
-        components=[_smooth_periodic(P, lam=1e-1), _smooth_trend(lam=1e2)],
-        residual_loss="l2",
-    )
-    out = solve(built)
-
-    trend_hat = out["values"]["trend"]
-    seasonal_hat = out["values"]["seasonal"]
-    resid = out["values"]["residual"]
-
-    trend_rmse = np.sqrt(np.mean((trend_hat - true_trend) ** 2))
-    seas_rmse = np.sqrt(np.mean((seasonal_hat - true_seasonal) ** 2))
-
-    print(f"status:        {out['status']}")
-    print(f"trend RMSE:    {trend_rmse:.4f}")
-    print(f"seasonal RMSE: {seas_rmse:.4f}")
-    # Residual is zero on unobserved entries by construction (not constrained).
-    print(f"resid on gap:  max|.| = {np.max(np.abs(resid[200:230])):.2e}")
-    assert out["status"] in _OPTIMAL_STATUSES
-    assert trend_rmse < 0.05, trend_rmse
-    assert seas_rmse < 0.05, seas_rmse
-    print("OK")

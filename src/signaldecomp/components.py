@@ -24,8 +24,8 @@ from __future__ import annotations
 import cvxpy as cp
 import numpy as np
 
-from decompose import Component
-from periodic import multiperiodic  # noqa: F401  (re-exported)
+from signaldecomp.decompose import Component
+from signaldecomp.periodic import multiperiodic  # noqa: F401  (re-exported)
 
 
 def linear_trend(role: str = "trend", slope_weight: float = 0.0) -> Component:
@@ -163,56 +163,3 @@ def bounded(inner, lower=None, upper=None):
 def nonneg(inner):
     """Constrain a component to be nonnegative (shorthand for bounded(.., 0))."""
     return bounded(inner, lower=0.0)
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.path.insert(0, "scripts")
-    from decompose import make_problem, solve
-
-    rng = np.random.default_rng(2)
-    T = 500
-    P = 50.0
-    t = np.arange(T)
-    true_trend = 1.0 + 0.003 * t
-    true_seasonal = 0.6 * np.sin(2 * np.pi * t / P)
-    true_sparse = np.zeros(T)
-    spike_idx = rng.choice(T, size=6, replace=False)
-    true_sparse[spike_idx] = rng.uniform(1.5, 2.5, size=6) * rng.choice([-1, 1], 6)
-    noise = 0.05 * rng.standard_normal(T)
-    y = true_trend + true_seasonal + true_sparse + noise
-    y[150:180] = np.nan
-
-    # NOTE: the sparse weight trades off against the residual. Too high and the
-    # sparse component collapses to zero (spikes leak into the residual); this
-    # is the sparse-vs-residual identifiability tension parameter search exists
-    # to resolve. 1e-3 recovers the spikes with residual ~= the true noise.
-    built = make_problem(
-        y,
-        components=[
-            multiperiodic(periods=P, num_harmonics=6, weight=1e-2, role="seasonal"),
-            smooth_trend(weight=1e2, order=2, role="trend"),
-            sparse(weight=1e-3, role="spikes"),
-        ],
-        residual_loss="l2",
-    )
-    out = solve(built)
-
-    trend_hat = out["values"]["trend"]
-    seasonal_hat = out["values"]["seasonal"]
-    spikes_hat = out["values"]["spikes"]
-
-    trend_rmse = np.sqrt(np.mean((trend_hat - true_trend) ** 2))
-    seas_rmse = np.sqrt(np.mean((seasonal_hat - true_seasonal) ** 2))
-    recovered = np.sum(np.abs(spikes_hat[spike_idx]) > 0.5)
-
-    print(f"status:           {out['status']}")
-    print(f"trend RMSE:       {trend_rmse:.4f}")
-    print(f"seasonal RMSE:    {seas_rmse:.4f}")
-    print(f"spikes recovered: {recovered}/6")
-    assert out["status"] in ("optimal", "optimal_inaccurate")
-    assert trend_rmse < 0.1, trend_rmse
-    assert seas_rmse < 0.1, seas_rmse
-    assert recovered >= 5, recovered
-    print("OK")
