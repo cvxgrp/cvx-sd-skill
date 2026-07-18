@@ -116,7 +116,7 @@ _CB_CYCLE = [
 ]
 
 
-def plot_decomposition(out, y=None, index=None, df=None, figsize=None):
+def plot_decomposition(out=None, y=None, index=None, df=None, figsize=None, residual_ref=0.0):
     """Stacked-panel plot of a decomposition: signal+fit, each role, residual.
 
     Panels, top to bottom: the observed signal with the reconstruction overlaid;
@@ -146,6 +146,8 @@ def plot_decomposition(out, y=None, index=None, df=None, figsize=None):
     import matplotlib.pyplot as plt
 
     if df is None:
+        if out is None:
+            raise ValueError("pass either a solved `out` or a prebuilt `df`.")
         df = components_to_frame(out, index=index, y=y)
     reserved = {"residual", "reconstruction", "y"}
     roles = [c for c in df.columns if c not in reserved]
@@ -174,12 +176,15 @@ def plot_decomposition(out, y=None, index=None, df=None, figsize=None):
             ax.plot(x, df[role], lw=1.4)
             ax.set_ylabel(role)
 
-        # Residual: signed fill above/below zero.
+        # Residual: signed fill above/below the reference (0 for additive
+        # models, 1 for multiplicative/log models where the residual is a factor).
         ax = axes[-1]
         resid = df["residual"].to_numpy()
-        ax.fill_between(x, resid, 0.0, where=(resid >= 0), alpha=0.5, lw=0)
-        ax.fill_between(x, resid, 0.0, where=(resid < 0), alpha=0.5, lw=0)
-        ax.axhline(0.0, color="black", lw=0.7)
+        ax.fill_between(x, resid, residual_ref, where=(resid >= residual_ref),
+                        alpha=0.5, lw=0)
+        ax.fill_between(x, resid, residual_ref, where=(resid < residual_ref),
+                        alpha=0.5, lw=0)
+        ax.axhline(residual_ref, color="black", lw=0.7)
         ax.set_ylabel("residual")
 
         for ax in axes:

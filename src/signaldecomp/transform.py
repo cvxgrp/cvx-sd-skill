@@ -127,3 +127,44 @@ def recover_components(out, log_transform=False, index=None):
         )
 
     return pd.DataFrame(cols, index=index)
+
+
+def recover_frame(out, log_transform=False, index=None, y=None):
+    """Plot-ready original-domain frame for :func:`signaldecomp.plot_decomposition`.
+
+    The transform-aware counterpart to
+    :func:`signaldecomp.components_to_frame`: back-transforms a solved
+    decomposition (via :func:`recover_components`) and, if given, attaches the
+    observed signal ``y`` as a column for the top panel.
+
+    The ``residual`` column is referenced to the model's "no deviation" value:
+    **0** for an additive model, **1** for a multiplicative/log model (where the
+    residual is the factor ``exp(residual)``). Pass the matching ``residual_ref``
+    to :func:`plot_decomposition` (0 or 1) so the residual panel's fill and
+    baseline are drawn correctly.
+
+    Parameters
+    ----------
+    out : dict
+        A solved output from :func:`signaldecomp.solve`.
+    log_transform : bool
+        Whether the decomposition was solved in log space.
+    index : pandas.Index, optional
+        Index to align on; defaults to a RangeIndex.
+    y : numpy.ndarray, optional
+        The observed signal in the ORIGINAL domain (not log-transformed); added
+        as a ``y`` column when given.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: each original-domain role, ``residual`` (referenced to 0 or 1),
+        ``reconstruction``, and ``y`` if supplied.
+    """
+    df = recover_components(out, log_transform=log_transform, index=index)
+    if y is not None:
+        y = np.asarray(y, dtype=float)
+        if y.shape[0] != len(df):
+            raise ValueError(f"y length {y.shape[0]} != frame length {len(df)}.")
+        df["y"] = y
+    return df

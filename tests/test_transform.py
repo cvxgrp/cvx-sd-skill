@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from signaldecomp import linear_trend, make_problem, multiperiodic, solve
-from signaldecomp.transform import prepare_input, recover_components
+from signaldecomp.transform import prepare_input, recover_components, recover_frame
 
 
 def _positive_signal(seed=0, T=400):
@@ -80,3 +80,35 @@ def test_recover_respects_index():
 def test_recover_rejects_non_solved_output():
     with pytest.raises(ValueError, match="no 'residual'"):
         recover_components({"values": {"trend": np.zeros(10)}})
+
+
+def test_recover_frame_additive_matches_components():
+    y = _positive_signal()
+    out = _solve(prepare_input(y, log_transform=False))
+    df = recover_frame(out, log_transform=False, y=y)
+    assert set(df.columns) == {"trend", "seas", "residual", "reconstruction", "y"}
+    # additive: reconstruction is the sum; residual referenced to 0
+    assert np.allclose(df["reconstruction"], df["trend"] + df["seas"])
+    obs = ~np.isnan(y)
+    assert np.allclose((df["reconstruction"] + df["residual"])[obs], y[obs], atol=1e-6)
+    assert np.allclose(df["y"], y, equal_nan=True)
+
+
+def test_recover_frame_multiplicative_residual_referenced_to_one():
+    y = _positive_signal()
+    out = _solve(prepare_input(y, log_transform=True))
+    df = recover_frame(out, log_transform=True, y=y)
+    assert set(df.columns) == {"trend", "seas", "residual", "reconstruction", "y"}
+    obs = ~np.isnan(y)
+    # multiplicative residual is a FACTOR referenced to 1 (not 0)
+    resid = df["residual"].to_numpy()[obs]
+    assert 0.5 < resid.mean() < 1.5
+    assert (resid > 0).all()
+    # reconstruction (product) * residual factor == y
+    assert np.allclose((df["reconstruction"] * df["residual"])[obs], y[obs], atol=1e-6)
+
+
+def test_recover_frame_y_length_mismatch_raises():
+    out = _solve(prepare_input(_positive_signal(T=300)))
+    with pytest.raises(ValueError, match="y length"):
+        recover_frame(out, y=np.zeros(299))

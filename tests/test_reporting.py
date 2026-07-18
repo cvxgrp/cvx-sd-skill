@@ -211,3 +211,21 @@ def test_format_report_without_y_omits_fit_stats():
 def test_format_report_rejects_non_solved_output():
     with pytest.raises(ValueError, match="no 'residual'"):
         format_report({"values": {"trend": np.zeros(10)}})
+
+
+# --- plot_decomposition residual_ref / df-only path ------------------------
+
+
+def test_plot_decomposition_residual_ref_and_df_path():
+    out, y, _ = _solved_two_role()
+    # df-only path (out defaults to None) with a non-zero residual reference
+    df = components_to_frame(out, y=y)
+    df["residual"] = df["residual"] + 1.0  # pretend multiplicative factor ~1
+    fig = plot_decomposition(df=df, residual_ref=1.0)
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_decomposition_requires_out_or_df():
+    with pytest.raises(ValueError, match="either a solved"):
+        plot_decomposition()

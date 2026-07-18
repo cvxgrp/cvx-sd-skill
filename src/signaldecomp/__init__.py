@@ -50,7 +50,7 @@ from signaldecomp.reporting import (
     plot_decomposition,
     plot_stability,
 )
-from signaldecomp.transform import prepare_input, recover_components
+from signaldecomp.transform import prepare_input, recover_components, recover_frame
 from signaldecomp.time_axis import (
     derive_delta,
     nearest_standard_freq,
@@ -110,4 +110,5 @@ __all__ = [
     # transforms (log / multiplicative pre-post-processing)
     "prepare_input",
     "recover_components",
+    "recover_frame",
 ]
