@@ -49,6 +49,17 @@ This is why one mechanism covers three things that look different but are not:
 
 All three are just "not in `M`."
 
+**In CVXPY, the mask is boolean indexing.** With `mask = ~np.isnan(y)` (`True`
+at observed entries), the consistency constraint is imposed only there by
+indexing the summed expression with the boolean array:
+
+    constraints.append(y[mask] == total[mask])
+
+Indexing a CVXPY expression with a NumPy boolean array selects those rows, so the
+boolean index *implements* `M` without ever materializing the selector matrix. The built
+problem returns this array as `built["mask"]`, and a hand-written masked term
+uses the same idiom.
+
 ## What a component is
 
 Each component `k` has a cost function
