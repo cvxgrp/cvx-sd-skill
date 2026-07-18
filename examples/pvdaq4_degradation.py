@@ -10,17 +10,12 @@ This is a WORKED EXAMPLE FROM A SPECIFIC DOMAIN (photovoltaic performance),
 strictly annotated as such. The signaldecomp library itself is domain-agnostic.
 
 The raw public dataset (PVDAQ system 4) is SUB-DAILY power/irradiance/temp. The
-PV *domain* pipeline that turns that into **daily normalized energy** (the y we
-decompose) -- temperature correction, PVWatts normalization, daily aggregation
--- lives UPSTREAM in a separate prep script (prep_pvdaq4_daily_y.py) and is NOT
-part of signaldecomp. That prep step is the "domain layer"; the skill sits
-BELOW it. From the loaded y onward, everything here is the general substrate:
-standardize -> build components -> solve -> report/plot/validate.
-
-SCAFFOLD STATUS: the data-load cell currently generates a SYNTHETIC daily y so
-the notebook structure and signaldecomp wiring can be validated without the
-network/rdtools prep. Replace that cell with the cached real y (see the TODO)
-once prep_pvdaq4_daily_y.py has produced it.
+PV *domain* pipeline that turns that into daily normalized energy (the y we
+decompose) lives UPSTREAM in a separate prep script (prep_pvdaq4_daily_y.py) and
+is NOT part of signaldecomp. Likewise, turning a solved trend curve into a
+percent-per-year DEGRADATION RATE is domain math, kept in a sibling module
+(pv_domain.py). Everything imported from `signaldecomp` is the general
+substrate; everything imported from `pv_domain` is the PV domain layer.
 
 Run:  uv run --group examples marimo edit examples/pvdaq4_degradation.py
 """
@@ -34,13 +29,13 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import marimo as mo
-    import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
 
     import signaldecomp as sd
+    import pv_domain as pv  # PV DOMAIN LAYER (sibling module), not signaldecomp
 
-    return mo, np, pd, sd
+    return mo, pd, plt, pv, sd
 
 
 @app.cell(hide_code=True)
@@ -48,19 +43,10 @@ def _(mo):
     mo.md(r"""
     # Signal-decomposition degradation analysis (PVDAQ system 4)
 
-    **Domain example, annotated.** `y` is *daily normalized energy* produced
-    by a PV-domain pipeline upstream (see the module docstring / prep
-    script). Everything below operates on `y` with the domain-agnostic
-    `signaldecomp` substrate.
-
-    The model decomposes `y` into a residual plus structural components:
-
-    - a **seasonal** component (truncated Fourier over an ~annual period),
-    - a **trend** component (linear / smooth / pwl / monotone),
-    - the **residual**, under a selectable loss.
-
-    Adjust the controls; the point solve is reactive (sub-second). The
-    expensive analyses (CI, stability) are button-gated.
+    **Domain example, annotated.** `y` is *daily normalized energy* from a
+    PV-domain pipeline (prep script). The decomposition and all substrate
+    operations below are domain-agnostic `signaldecomp`; the %/yr
+    degradation rate is PV domain math from `pv_domain`.
     """)
     return
 
@@ -70,31 +56,20 @@ def _(mo):
     mo.md(r"""
     ## 1. Load data (`y` = daily normalized energy)
 
-    **SCAFFOLD:** synthetic daily `y` for now. TODO: replace with the cached
-    real series from `prep_pvdaq4_daily_y.py`.
+    Cached artifact from `prep_pvdaq4_daily_y.py` (gitignored). Regenerate:
+    `uv run examples/prep_pvdaq4_daily_y.py`.
     """)
     return
 
 
 @app.cell
-def _(np, pd):
-    # TODO(real-y): replace this synthetic block with:
-    #     y_series = pd.read_pickle("examples/pvdaq4_daily_y.pickle")
-    #     (cached daily normalized energy produced by prep_pvdaq4_daily_y.py)
-    # For now, a synthetic daily series ~4 years: trend + annual season + noise,
-    # with a gap, so the annual Fourier and expanding-window have enough data.
-    _rng = np.random.default_rng(0)
-    _n = 4 * 365
-    _idx = pd.date_range("2015-01-01", periods=_n, freq="D")
-    _t = np.arange(_n)
-    _trend = 1.0 - 0.00005 * _t                      # slow decline
-    _season = 0.05 * np.sin(2 * np.pi * _t / 365.2425)
-    _y = _trend + _season + 0.02 * _rng.standard_normal(_n)
-    _y[600:630] = np.nan                             # a gap
-    y_series = pd.Series(_y, index=_idx, name="daily_normalized_energy")
-    print(f"y: {len(y_series)} daily points, "
-          f"{y_series.index.min().date()} -> {y_series.index.max().date()}, "
-          f"{int(y_series.isna().sum())} missing")
+def _(mo, pd):
+    y_series = pd.read_pickle("examples/pvdaq4_daily_y.pickle")
+    mo.md(
+        f"**y:** {len(y_series)} daily points, "
+        f"{y_series.index.min().date()} \u2192 {y_series.index.max().date()}, "
+        f"{int(y_series.isna().sum())} missing"
+    )
     return (y_series,)
 
 
@@ -102,18 +77,18 @@ def _(np, pd):
 def _(mo):
     mo.md(r"""
     ## 2. Standardize the time axis
-
-    Put `y` on a regular daily grid (delta = 86400 s). This is the entry
-    point to the general substrate.
     """)
     return
 
 
 @app.cell
-def _(sd, y_series):
+def _(mo, sd, y_series):
     std = sd.standardize_time_axis(y_series, freq="D")
     y = std["y"]
-    print(f"delta = {std['delta']} s, freq = {std['freq']}, T = {len(y)}")
+    mo.md(
+        f"**standardized:** delta = {std['delta']:.0f} s, "
+        f"freq = {std['freq']}, T = {len(y)}"
+    )
     return std, y
 
 
@@ -127,11 +102,11 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    # Define all widgets unconditionally so downstream cells can read .value;
+    # Widgets defined unconditionally so downstream cells can read .value;
     # display is assembled conditionally in the next cell.
     trend_type = mo.ui.radio(
-        options=["linear", "smooth", "pwl", "monotone"],
-        value="smooth",
+        options=["linear", "monotone", "smooth", "pwl"],
+        value="linear",
         label="Trend type",
     )
     loss_type = mo.ui.radio(
@@ -156,10 +131,12 @@ def _(mo):
     q_level = mo.ui.slider(
         start=0.05, stop=0.95, step=0.05, value=0.5, label="Quantile q", show_value=True
     )
+    log_transform = mo.ui.switch(label="Log transform (multiplicative)", value=False)
     return (
         huber_m,
         lam_seasonal,
         lam_trend,
+        log_transform,
         loss_type,
         num_harmonics,
         q_level,
@@ -172,6 +149,7 @@ def _(
     huber_m,
     lam_seasonal,
     lam_trend,
+    log_transform,
     loss_type,
     mo,
     num_harmonics,
@@ -192,6 +170,7 @@ def _(
         _rows.append(huber_m)
     if loss_type.value == "quantile":
         _rows.append(q_level)
+    _rows.append(log_transform)
     controls = mo.vstack(_rows)
     controls
     return
@@ -200,7 +179,27 @@ def _(
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 4. Solve (reactive)
+    ## 4. Prepare input (optional log transform)
+
+    With log transform on, the decomposition is solved on `log(y)`
+    (multiplicative model); everything downstream operates on `y_model`.
+    """)
+    return
+
+
+@app.cell
+def _(log_transform, mo, sd, y):
+    y_model = sd.prepare_input(y, log_transform=log_transform.value)
+    mo.md(
+        f"**input:** {'log(y) (multiplicative)' if log_transform.value else 'y (additive)'}"
+    )
+    return (y_model,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 5. Solve (reactive)
     """)
     return
 
@@ -211,14 +210,13 @@ def _(
     lam_seasonal,
     lam_trend,
     loss_type,
+    mo,
     num_harmonics,
     q_level,
     sd,
     trend_type,
-    y,
+    y_model,
 ):
-    # Build the trend component from the radio choice. Note the per-type weight
-    # semantics: linear_trend takes no fit weight; the others take `weight`.
     def _make_trend():
         w = 10.0 ** lam_trend.value
         if trend_type.value == "linear":
@@ -238,54 +236,85 @@ def _(
             return sd.huber_loss(M=huber_m.value)
         return sd.quantile_loss(q=q_level.value)
 
-    # Annual period in samples (daily data -> 365.2425).
     seasonal = sd.multiperiodic(
         365.2425, num_harmonics=num_harmonics.value,
         weight=10.0 ** lam_seasonal.value, role="seasonal",
     )
-    built = sd.make_problem(y, components=[seasonal, _make_trend()],
+    built = sd.make_problem(y_model, components=[seasonal, _make_trend()],
                             residual_loss=_make_loss())
     out = sd.solve(built)
-    print(f"status: {out['status']}")
+    mo.md(f"**solve status:** {out['status']}")
     return (out,)
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 5. Report
+    ## 6. Reports (substrate + domain)
     """)
     return
 
 
 @app.cell
-def _(mo, out, sd, y):
-    mo.md(sd.format_report(out, y=y, title="Decomposition"))
+def _(mo, out, sd, y_model):
+    mo.md(sd.format_report(out, y=y_model, title="Decomposition (substrate)"))
+    return
+
+
+@app.cell
+def _(log_transform, loss_type, mo, num_harmonics, out, pv, std, trend_type):
+    samples_per_year = pv.samples_per_year_from_delta(std["delta"])
+    rate = pv.overall_degradation_rate(
+        out, samples_per_year, log_space=log_transform.value
+    )
+    _meta = {
+        "trend_type": trend_type.value,
+        "loss": loss_type.value,
+        "num_harmonics": num_harmonics.value,
+        "log_transform": log_transform.value,
+    }
+    mo.md(pv.format_degradation_report(rate, _meta))
+    return (samples_per_year,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 7. Decomposition plot
+
+    When log transform is on, components are shown in **log space** (the
+    model is additive there). Use `signaldecomp.recover_components` for an
+    original-domain (multiplicative) view.
+    """)
+    return
+
+
+@app.cell
+def _(log_transform, out, plt, sd, std, y):
+    # Uniform for both modes: recover_frame back-transforms to the original
+    # domain (undoing the log transform when on), and residual_ref sets the
+    # residual panel baseline (0 additive, 1 multiplicative factor).
+    sd.plot_decomposition(
+        df=sd.recover_frame(
+            out, log_transform=log_transform.value, index=std["index"], y=y
+        ),
+        residual_ref=1.0 if log_transform.value else 0.0,
+    )
+    _fig = plt.gcf()
+    _fig.get_axes()[0]\
+        .set_ylim(0.6, 1)
+    _fig
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 6. Decomposition plot
-    """)
-    return
+    ## 8. Confidence interval (button-gated)
 
-
-@app.cell
-def _(out, sd, std, y):
-    sd.plot_decomposition(out, y=y, index=std["index"])
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## 7. Confidence interval (button-gated)
-
-    Moving-block residual bootstrap on the **final** model. Expensive
-    (many solves) -- run explicitly. CI is meaningful only on the specified
-    model, never inside a tuning loop.
+    Moving-block residual bootstrap of the **overall degradation rate** on
+    the final model. Expensive (many solves); CI is meaningful only on the
+    specified model, never inside a tuning loop.
     """)
     return
 
@@ -302,18 +331,20 @@ def _(
     huber_m,
     lam_seasonal,
     lam_trend,
+    log_transform,
     loss_type,
     mo,
     num_harmonics,
+    pv,
     q_level,
     run_ci,
+    samples_per_year,
     sd,
     trend_type,
-    y,
+    y_model,
 ):
     mo.stop(not run_ci.value)
 
-    # Rebuild the same model as a build_fn(sig) for the bootstrap.
     def _build(sig):
         w = 10.0 ** lam_trend.value
         if trend_type.value == "linear":
@@ -338,27 +369,31 @@ def _(
         )
         return sd.make_problem(sig, components=[seas, trend], residual_loss=loss)
 
-    # Extract the linear slope if present; otherwise the mean level as a stand-in
-    # scalar (domain-specific rate math would live here in a real analysis).
+    # The CI measures the DOMAIN quantity: overall %/yr degradation rate.
     def _extract(o):
-        vals = o["values"]
-        if "trend_b" in vals:
-            return float(vals["trend_b"])
-        return float(vals["trend"].mean())
-
-    ci = sd.bootstrap_ci(y, _build, _extract, block_size=365,
-                         n_resamples=200, random_state=0)
-    print("CI (block=365, 200 resamples):", ci)
+        return pv.overall_degradation_rate(
+            o, samples_per_year, log_space=log_transform.value
+        )
+    _n_samples = 400
+    with mo.status.spinner(
+        subtitle=f"Bootstrapping CI ({_n_samples} resamples, block=365) ..."
+    ):
+        ci = sd.bootstrap_ci(y_model, _build, _extract, block_size=365,
+                             n_resamples=_n_samples, random_state=0)
+    _lines = ["**Bootstrap CI** of overall degradation rate (%/yr):", ""]
+    for _k, _v in ci.items():
+        _lines.append(f"- [{_v[0]:+.3f}, {_v[1]:+.3f}] %/yr")
+    mo.md("\n".join(_lines))
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 8. Fit stability (button-gated)
+    ## 9. Fit stability (button-gated)
 
-    How the estimated components move as the record grows. Component-curve
-    snapshots are the default (works for any trend type).
+    How the trend moves as the record grows. Component-curve snapshots are
+    the default (works for any trend type).
     """)
     return
 
@@ -382,7 +417,7 @@ def _(
     run_stab,
     sd,
     trend_type,
-    y,
+    y_model,
 ):
     mo.stop(not run_stab.value)
 
@@ -410,8 +445,12 @@ def _(
         )
         return sd.make_problem(sig, components=[seas, trend], residual_loss=loss)
 
-    stability = sd.expanding_window_stability(y, _build, min_window=365, step=180)
-    stab_fig = sd.plot_stability(stability, role="trend")
+    with mo.status.spinner(subtitle="Solving expanding windows ...") as _spinner:
+        stability = sd.expanding_window_stability(
+            y_model, _build, min_window=365, step=180
+        )
+        _spinner.update(subtitle="Plotting stability ...")
+        stab_fig = sd.plot_stability(stability, role="trend")
     stab_fig
     return
 
