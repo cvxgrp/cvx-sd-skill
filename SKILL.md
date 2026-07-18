@@ -121,3 +121,47 @@ flattens it, too heavy a drift penalty erases the soiling, and both still solve
 cleanly. You judge them by **looking at the component**, not by a fit score —
 see [formulation.md](reference/formulation.md) for the worked walk-through and
 [model-specification.md](reference/model-specification.md) for why.
+
+## The loop, end to end
+
+Build, solve, read components by role. This is the whole cycle — everything else
+is choosing the components and reading the outputs.
+
+```python
+import numpy as np
+from signaldecomp import (
+    make_problem, solve, components_to_frame, plot_decomposition,
+    smooth_trend, multiperiodic, period_samples,
+    SECONDS_PER_DAY, SECONDS_PER_YEAR,
+)
+
+y = ...          # load and prepare data: 1-D array, NaN where missing
+delta = SECONDS_PER_DAY  # daily samples; periods scale by delta
+# (raw timestamps? standardize_time_axis(df) returns y, delta, and an index)
+
+built = make_problem(
+    y,
+    components=[
+        smooth_trend(1e2, role="trend"),
+        multiperiodic(
+            period_samples(SECONDS_PER_YEAR, delta),
+            num_harmonics=4, role="seasonal",
+        ),
+    ],
+)
+out = solve(built)                       # verifies DCP, then solves
+trend = out["values"]["trend"]           # solved arrays, keyed by role
+resid = out["values"]["residual"]        # x1 is always "residual"
+df = components_to_frame(out, y=y)        # labeled DataFrame, gaps imputed
+fig = plot_decomposition(out, y=y)       # signal+fit, per-role, residual panels
+```
+
+`solve` returns the built dict plus `status` and `values` — a dict from role to
+the solved array, including `residual` (x1) and any component aux (a trend
+slope, the seasonal coefficients). Components are always addressed by **role**,
+never by index, so adding a component later doesn't renumber anything.
+`components_to_frame` wraps the full-length components onto a pandas index (pass
+`index=` from `standardize_time_axis`), with a `reconstruction` column and the
+imputed values filled in at the gaps; `plot_decomposition` returns a Matplotlib
+figure (marimo-cell-friendly) with a panel for the signal-plus-fit, one per
+structural role, and the signed residual.
