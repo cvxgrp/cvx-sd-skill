@@ -177,3 +177,54 @@ structural role, and the signed residual.
 The `components` list is the seam: a catalog builder and a hand-written
 `Component` sit in it side by side and go through the same solve — the two paths
 from "compose, don't shop" plug into one loop.
+
+## Footguns
+
+These fail *silently* — the solve still returns `optimal`, the model still looks
+fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
+
+- **Scale periods by Δ.** A period is a physical duration, not an integer
+  sample count. Express periods and Δ in the *same* unit (whatever the
+  application uses) and convert with `period_samples`; hard-coding a period as a
+  sample count silently mis-tunes it and breaks on leap years / irregular Δ.
+- **A fixed-step grid can't represent DST.** If you build Δ from timestamps,
+  supply local *standard* time (no daylight-saving shifts) — a fixed-duration
+  grid has no 23h/25h days, so DST-shifted stamps produce spurious gaps.
+  (Computing Δ from timestamps yourself? Use `Timedelta.total_seconds()`, never
+  `.seconds`, which wraps at 24h.)
+- **Don't holdout-tune a structural (Tier-3) knob, or a knob on a component
+  that barely moves the reconstruction.** Holdout scores imputation of the
+  *reconstruction*: a knob that changes a component's *shape* but not the fit (a
+  breakpoint weight), or one on a low-contribution component, has an "optimum"
+  that is noise or the wrong objective. Judge those by **looking at the
+  component**. See [model-specification.md](reference/model-specification.md).
+- **Confidence intervals are a final-model step.** Never bootstrap inside a
+  tuning loop or before the model is specified — it conflates parameter
+  uncertainty with tuning variation and wastes the expensive resampling on
+  models you'll discard.
+
+## Reference
+
+- [formulation.md](reference/formulation.md) — the substrate: x1-residual,
+  masked linking, DCP as the verifiable target, composing bespoke components.
+- [component-catalog.md](reference/component-catalog.md) — convex component
+  vocabulary; excluded non-convex classes and their relaxations.
+- [periodic-and-time.md](reference/periodic-and-time.md) — Fourier periodics,
+  float periods, Δ-scaling, leap years, multi-scale, the trend↔seasonal
+  confound.
+- [time-axis.md](reference/time-axis.md) — standardizing raw timestamps to
+  `(y, index, Δ)`; the heat-map diagnostic.
+- [model-specification.md](reference/model-specification.md) — the Tier 1/2/3
+  tuning hierarchy; which knobs to holdout-tune, set by magnitude, or judge by
+  looking.
+- [implementation.md](reference/implementation.md) — spec→production;
+  tune-then-solve, runtime tuning, DPP-accelerated scans, CI at the end.
+- [downstream.md](reference/downstream.md) — extraction, bootstrap CIs,
+  expanding-window stability, reporting, the pandas round-trip.
+- [recontextualization.md](reference/recontextualization.md) — recognizing
+  latent convex decompositions in classical / hand-rolled code.
+- [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
+  the widget as a specification instrument.
+- [philosophy.md](reference/philosophy.md) — why convex, under-specification,
+  the operating band, the broader line of work.
+- [gotchas.md](reference/gotchas.md) — the fuller footgun list.
