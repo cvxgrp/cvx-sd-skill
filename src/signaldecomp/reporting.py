@@ -5,8 +5,9 @@ index, by design). This module closes the loop: re-wrap solved components onto
 a pandas index so the user gets labeled, plottable time series back -- the
 "translation-OUT" step from raw frame in to labeled components out.
 
-V1 provides the pandas round-trip (:func:`components_to_frame`). Report and plot
-generation will be added here.
+Provides the pandas round-trip (:func:`components_to_frame`), stacked-panel and
+stability plots (:func:`plot_decomposition`, :func:`plot_stability`), and a
+domain-agnostic markdown summary (:func:`format_report`).
 """
 
 from __future__ import annotations
@@ -288,3 +289,94 @@ def plot_stability(stability, role=None, figsize=None):
             ax.spines[["top", "right"]].set_visible(False)
         fig.tight_layout()
     return fig
+
+
+def format_report(out, y=None, title="Signal decomposition"):
+    """Domain-agnostic markdown summary of a solved decomposition.
+
+    Reports solve status, each structural component's share of the
+    reconstruction energy (a proxy for how much it contributes to the fit --
+    useful when deciding which components merit holdout-tuning), residual
+    statistics, and any scalar aux quantities. Deliberately free of domain
+    terms (no rates, units, physical interpretation): those belong to the
+    caller's domain layer.
+
+    Parameters
+    ----------
+    out : dict
+        A solved output from :func:`signaldecomp.solve`.
+    y : numpy.ndarray, optional
+        The observed signal; enables fit RMS/MAE on observed entries and mask
+        coverage.
+    title : str
+        Heading for the report.
+
+    Returns
+    -------
+    str
+        A markdown-formatted report.
+    """
+    values = out["values"]
+    if "residual" not in values:
+        raise ValueError("out['values'] has no 'residual'; not a solved output.")
+    residual = np.asarray(values["residual"], dtype=float)
+    T = residual.shape[0]
+
+    structural = {}
+    scalar_aux = {}
+    for role, val in values.items():
+        if role == "residual":
+            continue
+        arr = np.asarray(val, dtype=float) if np.ndim(val) else None
+        if arr is not None and arr.shape == (T,):
+            structural[role] = arr
+        elif np.ndim(val) == 0:
+            scalar_aux[role] = float(val)
+
+    reconstruction = (
+        np.sum(np.stack(list(structural.values()), axis=0), axis=0)
+        if structural
+        else np.zeros(T)
+    )
+
+    lines = [f"# {title}", ""]
+    lines.append(f"- **status:** {out.get('status', 'unknown')}")
+    lines.append(f"- **length (T):** {T}")
+
+    energies = {r: float(np.sum(a**2)) for r, a in structural.items()}
+    total_energy = sum(energies.values())
+    lines.append("")
+    lines.append("## Components (share of reconstruction energy)")
+    lines.append("")
+    if total_energy > 0:
+        for role in structural:
+            share = 100.0 * energies[role] / total_energy
+            lines.append(f"- **{role}:** {share:5.1f}%")
+    else:
+        lines.append("- (no structural components)")
+
+    lines.append("")
+    lines.append("## Residual")
+    lines.append("")
+    lines.append(f"- **residual RMS:** {np.sqrt(np.mean(residual**2)):.4g}")
+    lines.append(f"- **residual MAE:** {np.mean(np.abs(residual)):.4g}")
+    if y is not None:
+        y = np.asarray(y, dtype=float)
+        obs = ~np.isnan(y)
+        n_obs = int(obs.sum())
+        err = reconstruction[obs] - y[obs]
+        lines.append(
+            f"- **observed entries:** {n_obs} / {T} "
+            f"({100.0 * n_obs / T:.1f}% coverage)"
+        )
+        lines.append(f"- **fit RMS (observed):** {np.sqrt(np.mean(err**2)):.4g}")
+        lines.append(f"- **fit MAE (observed):** {np.mean(np.abs(err)):.4g}")
+
+    if scalar_aux:
+        lines.append("")
+        lines.append("## Scalar quantities")
+        lines.append("")
+        for k in sorted(scalar_aux):
+            lines.append(f"- **{k}:** {scalar_aux[k]:.6g}")
+
+    return "\n".join(lines)

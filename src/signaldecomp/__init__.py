@@ -46,6 +46,7 @@ from signaldecomp.heatmap import (
 from signaldecomp.periodic import period_samples
 from signaldecomp.reporting import (
     components_to_frame,
+    format_report,
     plot_decomposition,
     plot_stability,
 )
@@ -102,6 +103,7 @@ __all__ = [
     "valid_endpoints",
     # reporting (pandas round-trip + plots)
     "components_to_frame",
+    "format_report",
     "plot_decomposition",
     "plot_stability",
 ]

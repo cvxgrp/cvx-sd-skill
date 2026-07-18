@@ -17,6 +17,7 @@ from signaldecomp import (  # noqa: E402
 )
 from signaldecomp.reporting import (  # noqa: E402
     components_to_frame,
+    format_report,
     plot_decomposition,
     plot_stability,
 )
@@ -168,3 +169,45 @@ def test_plot_stability_bad_role_raises():
     stab = expanding_window_stability(y, build_fn, min_window=100, step=75)
     with pytest.raises(ValueError, match="not in snapshots"):
         plot_stability(stab, role="nonexistent")
+
+
+# --- format_report --------------------------------------------------------
+
+
+def test_format_report_structure_and_shares():
+    out, y, _ = _solved_two_role()
+    md = format_report(out, y=y, title="My decomposition")
+    assert md.startswith("# My decomposition")
+    assert "**status:** optimal" in md
+    assert "## Components (share of reconstruction energy)" in md
+    assert "**trend:**" in md and "**seas:**" in md
+    assert "## Residual" in md
+    assert "residual RMS" in md
+    assert "fit RMS (observed)" in md
+    assert "## Scalar quantities" in md
+    assert "trend_b" in md
+
+
+def test_format_report_shares_sum_to_100():
+    out, _, _ = _solved_two_role()
+    md = format_report(out)
+    shares = [
+        float(line.split(":**")[1].strip().rstrip("%"))
+        for line in md.splitlines()
+        if line.startswith("- **") and line.rstrip().endswith("%")
+    ]
+    assert len(shares) == 2  # trend + seas
+    assert abs(sum(shares) - 100.0) < 0.1
+
+
+def test_format_report_without_y_omits_fit_stats():
+    out, _, _ = _solved_two_role()
+    md = format_report(out)
+    assert "residual RMS" in md  # residual stats always present
+    assert "fit RMS (observed)" not in md  # fit stats require y
+    assert "coverage" not in md
+
+
+def test_format_report_rejects_non_solved_output():
+    with pytest.raises(ValueError, match="no 'residual'"):
+        format_report({"values": {"trend": np.zeros(10)}})
