@@ -21,6 +21,9 @@ packages = ["src/signaldecomp"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
+examples = [
+    "marimo>=0.23.14",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
