@@ -101,4 +101,5 @@ https://doi.org/10.1561/2000000122
 
 ## License
 
-TBD.
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2025 Bennet Meyers and the Alliance for Sustainable Energy, LLC.
