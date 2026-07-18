@@ -43,7 +43,12 @@ from signaldecomp.heatmap import (
     plot_heatmap,
     steps_per_day,
 )
-from signaldecomp.periodic import period_samples
+from signaldecomp.periodic import (
+    SECONDS_PER_DAY,
+    SECONDS_PER_WEEK,
+    SECONDS_PER_YEAR,
+    period_samples,
+)
 from signaldecomp.reporting import (
     components_to_frame,
     format_report,
@@ -82,6 +87,9 @@ __all__ = [
     "nonneg",
     # periodic helpers
     "period_samples",
+    "SECONDS_PER_DAY",
+    "SECONDS_PER_WEEK",
+    "SECONDS_PER_YEAR",
     # time-axis standardization
     "standardize_time_axis",
     "derive_delta",
