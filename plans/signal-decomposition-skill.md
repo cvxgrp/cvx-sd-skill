@@ -307,6 +307,14 @@ signal-decomposition/           (skill root -- exact dir name TBD)
 
 - Exact skill root directory name.
 - Whether to include the in-scope recontextualization example in V1 (lean: yes).
+- **TODO `holdout_select` — add strided/periodic block holdout.** As built it
+  uses a SINGLE CENTER block (`holdout_fraction`, centered; or explicit
+  `holdout_slice`). Add a periodic scheme: hold out N contiguous samples every
+  N*m samples (e.g. 1 week every 5th week = 20%), so the held-out set samples
+  every phase of a seasonal cycle rather than one contiguous regime. Better for
+  seasonal data. Likely a `holdout="center"|"periodic"` option (or a
+  block-length + stride pair). Keep center as an option; blocked (not random)
+  still respects local correlation. Not yet built.
 - Dependencies (RESOLVED, as built): `cvxpy`, `numpy`, `pandas`, `matplotlib`,
   `scipy`; dev `pytest`. spcqe VENDORED (not a dep); seaborn NOT used.
 
