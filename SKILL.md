@@ -129,9 +129,10 @@ is choosing the components and reading the outputs.
 
 ```python
 import numpy as np
+import cvxpy as cp
 from signaldecomp import (
     make_problem, solve, components_to_frame, plot_decomposition,
-    smooth_trend, multiperiodic, period_samples,
+    smooth_trend, multiperiodic, period_samples, Component,
     SECONDS_PER_DAY, SECONDS_PER_YEAR,
 )
 
@@ -139,14 +140,21 @@ y = ...          # load and prepare data: 1-D array, NaN where missing
 delta = SECONDS_PER_DAY  # daily samples; periods scale by delta
 # (raw timestamps? standardize_time_axis(df) returns y, delta, and an index)
 
+# A component is a build(T) -> (expr, loss, constraints); catalog builders
+# return these, and you can hand-write one when nothing in the catalog fits.
+def build_spikes(T):
+    x = cp.Variable(T)
+    return x, 5.0 * cp.norm1(x), [x >= 0]   # sparse, nonnegative
+
 built = make_problem(
     y,
     components=[
-        smooth_trend(1e2, role="trend"),
+        smooth_trend(1e2, role="trend"),               # catalog builder
         multiperiodic(
             period_samples(SECONDS_PER_YEAR, delta),
             num_harmonics=4, role="seasonal",
         ),
+        Component(role="spikes", build=build_spikes),   # hand-composed
     ],
 )
 out = solve(built)                       # verifies DCP, then solves
@@ -165,3 +173,7 @@ never by index, so adding a component later doesn't renumber anything.
 imputed values filled in at the gaps; `plot_decomposition` returns a Matplotlib
 figure (marimo-cell-friendly) with a panel for the signal-plus-fit, one per
 structural role, and the signed residual.
+
+The `components` list is the seam: a catalog builder and a hand-written
+`Component` sit in it side by side and go through the same solve — the two paths
+from "compose, don't shop" plug into one loop.
