@@ -19,3 +19,8 @@ __pycache__/
 # Cached daily-normalized-energy y from the example prep script (regenerate locally)
 examples/pvdaq4_daily_y.pickle
 examples/pvdaq4_daily_y.csv
+
+# Editor swap files
+*.swp
+*.swo
+*~
