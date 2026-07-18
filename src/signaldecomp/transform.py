@@ -1,8 +1,8 @@
 """Domain-agnostic pre/post-processing transforms for signal decomposition.
 
 The log transform turns an ADDITIVE decomposition into a MULTIPLICATIVE one:
-decomposing ``log(y) = x1 + x2 + ...`` and exponentiating gives
-``y ~= exp(x1) * exp(x2) * ...`` in the original domain -- the structural
+decomposing ``log(y) = x0 + x1 + ...`` and exponentiating gives
+``y ~= exp(x0) * exp(x1) * ...`` in the original domain -- the structural
 components *multiply* rather than add, and the residual becomes a multiplicative
 factor. This is a common, domain-agnostic modeling choice (e.g. proportional
 seasonality, compound growth/decay); the interpretation of any component remains

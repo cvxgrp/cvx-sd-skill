@@ -5,7 +5,7 @@ Each factory returns a decompose.Component -- a build(T) callable yielding
 decompose.make_problem. All components here are convex (V1 scope).
 
 A note on what is not here: the residual losses (mean-square-small, l1, Huber,
-quantile) are properties of the residual x1 and are selected via
+quantile) are properties of the residual x0 and are selected via
 make_problem(..., residual_loss=...); they are not structural components. A
 structural component captures a kind of signal (a trend, a seasonal shape,
 sparse spikes), and its loss expresses how plausible that shape is; the residual

@@ -2,7 +2,7 @@
 
 These port and extend the original decompose.py smoke test: a synthetic
 trend + periodic + noise signal with a gap must be recovered, and the core
-invariants (x1 residual, masked linking equality, DCP gate, role uniqueness)
+invariants (x0 residual, masked linking equality, DCP gate, role uniqueness)
 must hold.
 """
 
@@ -58,7 +58,7 @@ def test_mask_matches_observed_entries():
     assert np.array_equal(built["mask"], ~np.isnan(y))
 
 
-def test_residual_is_x1_and_present():
+def test_residual_is_x0_and_present():
     y, _ = _synthetic()
     built = make_problem(y, components=[smooth_trend(weight=1e2)])
     assert "residual" in built["variables"]
@@ -88,8 +88,8 @@ def test_residual_loss_accepts_callable():
     # A user-supplied DCP-compliant loss is accepted directly.
     y, _ = _synthetic()
 
-    def custom(x1):
-        return (1.0 / x1.shape[0]) * cp.sum_squares(x1)
+    def custom(x):
+        return (1.0 / x.shape[0]) * cp.sum_squares(x)
 
     built = make_problem(y, components=[smooth_trend(weight=1e2)], residual_loss=custom)
     out = solve(built)

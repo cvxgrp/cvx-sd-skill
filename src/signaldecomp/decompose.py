@@ -3,14 +3,14 @@
 This module is the keystone of the skill. It builds the convex signal
 decomposition (SD) problem
 
-    minimize    phi_1(x1) + phi_2(x2) + ... + phi_K(xK)
-    subject to  y == x1 + x2 + ... + xK   (over observed entries only)
+    minimize    phi_0(x0) + phi_1(x1) + ... + phi_K(xK)
+    subject to  y == x0 + x1 + ... + xK   (over observed entries only)
 
 following the Meyers & Boyd framework, with two invariants enforced *by
 construction*:
 
-1. **x1 is always the residual** (mean-square-small, or a robust variant).
-   Structural components are x2, x3, ... and are appended in order, so
+1. **x0 is always the residual** (mean-square-small, or a robust variant).
+   Structural components are x1, x2, ... and are appended in order, so
    extending a model never renumbers anything.
 2. **Missing data is native.** The linking (consistency) equality is imposed
    only on observed entries via a boolean mask; unobserved entries (NaN in
@@ -67,7 +67,7 @@ class Component:
 
 
 def _resolve_residual_loss(residual_loss):
-    """Resolve a residual-loss specifier to a callable ``x1 -> scalar``.
+    """Resolve a residual-loss specifier to a callable ``x -> scalar``.
 
     Accepts either a callable (returned unchanged) or one of the string preset
     names, which map to the factories in :mod:`data_fidelity`. Passing a
@@ -77,7 +77,7 @@ def _resolve_residual_loss(residual_loss):
     Parameters
     ----------
     residual_loss : callable or str
-        A convex ``loss_fn(x1) -> scalar cvxpy expression``, or one of
+        A convex ``loss_fn(x) -> scalar cvxpy expression``, or one of
         ``"l2"``, ``"l1"``, ``"huber"``, ``"quantile"`` (using default
         parameters). For non-default preset parameters (e.g. a specific Huber
         threshold or quantile level), pass the factory result directly, e.g.
@@ -86,7 +86,7 @@ def _resolve_residual_loss(residual_loss):
     Returns
     -------
     callable
-        ``loss_fn(x1) -> scalar cvxpy expression``.
+        ``loss_fn(x) -> scalar cvxpy expression``.
     """
     if callable(residual_loss):
         return residual_loss
@@ -111,9 +111,9 @@ def make_problem(
 ) -> dict:
     """Build the masked signal-decomposition problem.
 
-    Assembles ``y = x1 + x2 + ... + xK`` where ``x1`` is the residual
-    (index 1, always) and ``components`` supply the structural terms
-    ``x2, ..., xK`` in order. The consistency equality is imposed only on
+    Assembles ``y = x0 + x1 + ... + xK`` where ``x0`` is the residual
+    (index 0, always) and ``components`` supply the structural terms
+    ``x1, ..., xK`` in order. The consistency equality is imposed only on
     the observed (non-NaN) entries of ``y``.
 
     Parameters
@@ -122,10 +122,10 @@ def make_problem(
         Observed scalar signal. ``NaN`` entries are treated as missing and
         excluded from the linking constraint.
     components : list of Component
-        Structural components (x2, ..., xK), in order.
+        Structural components (x1, ..., xK), in order.
     residual_loss : callable or str
-        Convex loss for the residual x1. Any DCP-compliant
-        ``loss_fn(x1) -> scalar cvxpy expression`` is accepted; this is the
+        Convex loss for the residual x0. Any DCP-compliant
+        ``loss_fn(x) -> scalar cvxpy expression`` is accepted; this is the
         general, extensible case. The strings ``"l2"`` (default), ``"l1"``,
         ``"huber"``, ``"quantile"`` are convenience aliases for the presets in
         :mod:`data_fidelity` with default parameters. For non-default parameters,
@@ -138,8 +138,8 @@ def make_problem(
 
         - ``"problem"`` : the :class:`cvxpy.Problem` (call ``.solve()`` first).
         - ``"variables"`` : dict mapping role -> CVXPY expression, including
-          ``"residual"`` for x1, plus any component ``aux`` expressions.
-        - ``"residual"`` : the residual variable x1 (also under
+          ``"residual"`` for x0, plus any component ``aux`` expressions.
+        - ``"residual"`` : the residual variable x0 (also under
           ``variables["residual"]``).
         - ``"mask"`` : boolean array of observed entries.
         - ``"args"`` : the scalar build arguments, for reproducible re-builds.
@@ -157,13 +157,13 @@ def make_problem(
     if not mask.any():
         raise ValueError("y has no observed (non-NaN) entries.")
 
-    # x1: the residual, always index 1.
-    x1 = cp.Variable(T, name="residual")
+    # x0: the residual, always index 0.
+    x0 = cp.Variable(T, name="residual")
     loss_fn = _resolve_residual_loss(residual_loss)
-    objective = loss_fn(x1)
-    total = x1
+    objective = loss_fn(x0)
+    total = x0
 
-    variables: dict[str, cp.Expression] = {"residual": x1}
+    variables: dict[str, cp.Expression] = {"residual": x0}
     constraints: list = []
     seen_roles = {"residual"}
 
@@ -186,7 +186,7 @@ def make_problem(
     return {
         "problem": problem,
         "variables": variables,
-        "residual": x1,
+        "residual": x0,
         "mask": mask,
         "args": {"residual_loss": residual_loss},
     }
