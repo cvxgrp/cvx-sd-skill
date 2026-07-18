@@ -24,3 +24,7 @@ examples/pvdaq4_daily_y.csv
 *.swp
 *.swo
 *~
+
+# Private working notes (kept local, not published)
+memories/
+plans/
