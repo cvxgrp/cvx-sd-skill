@@ -48,3 +48,76 @@ won't flag.
   scaled by Δ as late as possible — never hard-coded as integer sample counts.
   (`time_axis.py` is a convenience for deriving `(y, index, Δ)` from raw
   sub-daily timestamps; the contract itself is just those three.)
+
+## What the skill does
+
+Two moves. **Translation-IN:** turn domain intent into components, losses, and
+transforms — "the trend can't reverse" becomes a monotone constraint,
+"outliers, not noise" becomes a robust residual loss, "proportional
+seasonality" becomes a log transform. **Translation-OUT:** wire the solved
+components back to what the user actually wanted — a scalar extracted from a
+curve, a confidence interval, a stability check, a labeled DataFrame or plot.
+The convex solve sits in the middle; the skill is the translation on both
+sides, not the components themselves.
+
+## Which situation are you in
+
+The first move differs completely by context; identify it before formulating
+anything.
+
+- **Exploration** — data on disk, model unknown ("is there a trend?"). Diagnose
+  before you commit. **We recommend marimo here**: build a live notebook where
+  sliders and dropdowns let the user *feel* the tradeoffs between model
+  families. Take over at the standardize step (`time_axis`, `heatmap`). See
+  [marimo.md](reference/marimo.md).
+- **Implementation** — model decided, target is production. Be precise and
+  deterministic: plain `signaldecomp` (or generated) CVXPY, a correct Δ,
+  reproducible build/solve, tests. Rarely a single solve — see
+  [implementation.md](reference/implementation.md).
+- **Review / edit** — existing code, SD or SD-shaped. Read it, map it onto the
+  substrate ("this smoothing spline *is* an x1-residual with a smooth trend and
+  no mask"), correct footguns, extend append-only. Much classical modeling —
+  regression, splines, GAMs, Fourier — is a convex decomposition in disguise;
+  recognizing that is the job. See
+  [recontextualization.md](reference/recontextualization.md).
+
+These flow into each other: exploration hands off to implementation; review can
+kick off exploration.
+
+## Formulate: compose, don't shop
+
+A component's cost is a **sum of convex terms plus a feasible set**, and those
+stack freely. This is the core move — you *compose* a cost that matches the
+belief, you don't pick the nearest catalog entry.
+
+Suppose a component should drift down slowly but recover in sharp jumps back to
+a baseline of zero — soiling that accumulates, then washes off (an inverted
+sawtooth). Nothing in the catalog is that. You compose it: penalize the
+downward drift, leave recoveries free, pin the baseline.
+
+```python
+x = cp.Variable(T)
+loss = w_d * cp.norm(cp.neg(cp.diff(x)), 2) + w_v * cp.norm1(x)  # w_v tiny, ~1e-6
+cons = [x <= 0]
+```
+
+An L2 (group-lasso) penalty on the *negative* first differences costs the slow
+decline; upward steps are unpenalized, so washes snap back freely; a whisper of
+L1 pins the level at zero without shaping the fit.
+
+**Reach for `signaldecomp`** when a component *is* a catalog entry — it's tested
+and correct on the fiddly details (masked linking, dropped DC column, Δ-scaled
+periods). But the entries are worked patterns, not a fence: a `pwl_trend` *is*
+`weight * norm1(diff(x, k=2))`. Once you see that, you write the variants the
+catalog never anticipated.
+
+**DCP is the check that makes this safe** — compose the pieces, then let CVXPY
+confirm the whole is convex. `solve(..., verify_dcp=True)` (the default) refuses
+a non-convex model rather than returning a meaningless answer. Construct and
+verify; never reason "this must be convex" and ship it.
+
+Composed costs like the sawtooth are *tuning-sensitive*: too heavy a pin
+flattens it, too heavy a drift penalty erases the soiling, and both still solve
+cleanly. You judge them by **looking at the component**, not by a fit score —
+see [formulation.md](reference/formulation.md) for the worked walk-through and
+[model-specification.md](reference/model-specification.md) for why.
