@@ -18,9 +18,10 @@ extraction / CI / stability / reporting / plotting / the user's own packages).
 
 ## PROGRESS & DECISIONS LOG (living section — read this first)
 
-**Status:** the core library, validation, time-axis, heat-map, and reporting
-layers are built, tested (**76 passing tests**), and committed. Still to build:
-prose (`SKILL.md`, `reference/`) and `examples/`. Several original-plan details
+**Status:** the core library, validation, time-axis, heat-map, reporting, and
+transform layers are built and tested (**91 passing tests**), plus a complete PV
+worked example (marimo notebook + domain layer + prep script). All committed.
+Still to build: prose (`SKILL.md`, `reference/`). Several original-plan details
 below are SUPERSEDED — see notes.
 
 ### Built & committed
@@ -130,27 +131,40 @@ below are SUPERSEDED — see notes.
   `plot_decomposition`/`plot_stability` (x1/x2/x3 -> role-based; %/yr, tableau
   global-style, and `plot_trend` DROPPED). Visual review via
   `scratch/visual_reporting.py` (signed off).
+- **`transform.py`** — domain-agnostic log/multiplicative pre/post-processing.
+  `prepare_input(y, log_transform)` (masks non-positive -> NaN, takes log);
+  `recover_components(out, log_transform)` back-transforms a solved output
+  (additive = sum; multiplicative = product, residual as `exp(residual)` factor);
+  `recover_frame(...)` is the plot-ready, transform-aware counterpart to
+  `components_to_frame`. `plot_decomposition` gained `residual_ref` (0 additive,
+  1 multiplicative) so the residual panel references the model's no-deviation
+  value. `format_report(out, y)` gives a domain-agnostic markdown summary
+  (status, per-component share of reconstruction energy, residual/fit stats).
 - **`tests/`** — real pytest suite (`test_decompose`, `test_periodic`,
   `test_components`, `test_exog`, `test_validation`, `test_time_axis`,
-  `test_heatmap`, `test_reporting`), **76 tests**. Plot code has Agg-backend
-  smoke tests + human visual review (see `scratch/`). SUPERSEDES per-module
-  `__main__` tests.
+  `test_heatmap`, `test_reporting`, `test_transform`), **91 tests**. Plot code
+  has Agg-backend smoke tests + human visual review (see `scratch/`). SUPERSEDES
+  per-module `__main__` tests.
 - **Dependencies (actual):** cvxpy, numpy, pandas, matplotlib, scipy; dev:
   pytest. NO spcqe, NO seaborn.
 
 ### IN FLIGHT (resume here)
 
-- `reporting.py` complete (pandas round-trip + `plot_decomposition` +
-  `plot_stability`), tested (76 pass), visually reviewed (signed off), and wired
-  into the public API. Also in this batch: `expanding_window_stability` reworked
-  to snapshots-default, and a latent `time_axis` bug fixed (`freq="D"` calendar
-  offset couldn't go through `pd.Timedelta`; now uses the fixed-seconds table +
-  regression test). Being committed now (no signature). Next: prose + examples.
+- All CODE is complete and committed (91 tests). Latest arc: `format_report`,
+  the `transform.py` log/multiplicative layer (`prepare_input`,
+  `recover_components`, `recover_frame`) + `plot_decomposition(residual_ref=)`,
+  marimo added as an `examples` dependency group, and a COMPLETE PV worked
+  example: `examples/pvdaq4_degradation.py` (marimo notebook, file->widget
+  workflow), `examples/prep_pvdaq4_daily_y.py` (PEP 723, rdtools-isolated, makes
+  the cached daily y), `examples/pv_domain.py` (trend curve -> %/yr rate). The
+  example is strictly domain-annotated; neither library nor notebook depends on
+  rdtools. Resume at: PROSE (`SKILL.md` + `reference/`).
 
 ### Next up
 
-- `SKILL.md` + `reference/` prose, now that the code contracts are final.
-- `examples/*.py`.
+- `SKILL.md` + `reference/` prose, now that ALL code contracts are final and
+  exercised by a working end-to-end example.
+- More `examples/*.py` (the PV worked example is DONE; add diverse others).
 - (Deferred: markdown-report generation — `components_to_frame` + the two plots
   cover the reporting need for now; a text/markdown summary can come with prose.)
 
