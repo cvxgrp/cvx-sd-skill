@@ -115,3 +115,16 @@ def test_solve_rejects_non_dcp():
     built = make_problem(y, components=[Component(role="bad", build=bad_build)])
     with pytest.raises(ValueError, match="DCP"):
         solve(built)
+
+
+@pytest.mark.parametrize("residual_loss", [
+    "l2", "l1",
+    __import__("signaldecomp").huber_loss(M=0.5),
+    __import__("signaldecomp").quantile_loss(q=0.5),
+])
+def test_shipped_residual_losses_solve(residual_loss):
+    """Both string aliases and parameterized factory losses reach optimal."""
+    y, _ = _synthetic()
+    out = solve(make_problem(y, components=[smooth_trend(weight=1e2)],
+                             residual_loss=residual_loss))
+    assert out["status"] in _OPTIMAL

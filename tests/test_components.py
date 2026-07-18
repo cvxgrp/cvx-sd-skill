@@ -89,3 +89,55 @@ def test_bounded_wrapper_enforces_interval():
     vals = out["values"]["trend"]
     assert np.min(vals) > -1e-6
     assert np.max(vals) < 3.0 + 1e-6
+
+
+def test_all_builders_satisfy_dcp_contract():
+    """Every catalog component's loss is convex (or 0) and its expr affine,
+    checkable in isolation -- the catalog's central promise (see
+    reference/formulation.md, reference/component-catalog.md)."""
+    import cvxpy as cp
+    from signaldecomp import (
+        linear_trend, smooth_trend, pwl_trend, monotone_trend, sparse,
+        multiperiodic, exog_linear, exog_spline,
+    )
+    T = 120
+    z = np.linspace(0.0, 1.0, T)
+    builders = {
+        "linear_trend": linear_trend(role="c"),
+        "smooth_trend": smooth_trend(weight=1e1, role="c"),
+        "pwl_trend": pwl_trend(weight=1e0, role="c"),
+        "monotone_trend": monotone_trend(weight=0.0, role="c"),
+        "sparse": sparse(weight=1e0, role="c"),
+        "multiperiodic": multiperiodic(periods=24.0, num_harmonics=3, role="c"),
+        "exog_linear": exog_linear(z, role="c"),
+        "exog_spline": exog_spline(z, role="c"),
+    }
+    for name, comp in builders.items():
+        expr, loss, cons = comp.build(T)
+        assert expr.is_affine(), f"{name}: expr not affine"
+        if isinstance(loss, cp.Expression):
+            assert loss.is_convex() and loss.is_dcp(), f"{name}: loss not convex/DCP"
+        for c in cons:
+            assert c.is_dcp(), f"{name}: constraint not DCP"
+
+
+def test_builders_expose_documented_aux_keys():
+    """Aux keys promised by the catalog appear in solved values."""
+    from signaldecomp import (
+        linear_trend, multiperiodic, exog_linear, exog_spline,
+    )
+    rng = np.random.default_rng(7)
+    T = 200
+    z = np.linspace(0.0, 1.0, T)
+    y = 1.0 + 0.01 * np.arange(T) + 0.3 * z + 0.05 * rng.standard_normal(T)
+    cases = [
+        (linear_trend(role="tr"), ["tr_a", "tr_b"]),
+        (multiperiodic(periods=24.0, num_harmonics=3, role="se"), ["se_theta"]),
+        (exog_linear(z, role="ex"), ["ex_beta"]),
+        (exog_spline(z, role="ex"), ["ex_coef"]),
+    ]
+    for comp, keys in cases:
+        out = solve(make_problem(y, components=[comp]))
+        assert out["status"] in _OPTIMAL
+        for k in keys:
+            assert k in out["values"], f"missing aux key {k}"
