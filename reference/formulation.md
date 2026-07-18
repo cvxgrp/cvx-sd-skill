@@ -10,7 +10,7 @@ it.
 A decomposition writes the observed signal as a sum of `K` estimated
 components:
 
-    y = x1 + x2 + ... + xK
+    y = x0 + x1 + ... + xK
 
 `y` is a 1-D signal on a regular grid and **may have missing values**. The
 components are the unknowns we solve for, and they are **real-valued
@@ -18,9 +18,9 @@ everywhere** — no gaps. That asymmetry is the whole engine of imputation: wher
 `y` is missing, the summed components still take a value, and that value *is*
 the model's estimate of the missing datum.
 
-**x1 is always the data-fidelity term** (the residual). Its cost is the
+**x0 is always the data-fidelity term** (the residual). Its cost is the
 data-fidelity loss — mean-square by default, or a robust variant — selected
-with `make_problem(..., residual_loss=...)`. Everything else (`x2 ... xK`) is a
+with `make_problem(..., residual_loss=...)`. Everything else (`x1 ... xK`) is a
 structural component you append. Because the fidelity term occupies the fixed
 first slot, adding or removing structural components never renumbers anything;
 downstream code addresses components by **role** (`"trend"`, `"seasonal"`),
@@ -32,7 +32,7 @@ Let `M` be the **mask operator** — the linear map that selects the observed
 entries of a signal and drops the missing ones. Missing data is handled by
 applying `M` to the *consistency constraint*:
 
-    M y = M (x1 + x2 + ... + xK)
+    M y = M (x0 + x1 + ... + xK)
 
 i.e. the components must sum to `y` **at the known entries only**. At missing
 entries there is no constraint, so the components are free to take whatever
@@ -86,7 +86,7 @@ the catalog is a set of worked `build` functions, not a privileged mechanism.
 `bounded(inner, ...)` and `nonneg(inner)` are wrappers: they take a component
 and add an indicator to it.
 
-For x1, `ell_1` is the data-fidelity loss and `I_1` is empty (the residual is
+For x0, `ell_0` is the data-fidelity loss and `I_0` is empty (the residual is
 unconstrained — full domain).
 
 ## Loss as (often improper) prior

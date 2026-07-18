@@ -29,13 +29,13 @@ Every decomposition sits on the same four invariants. Get these right and the
 rest composes; get one wrong and the model is subtly broken in ways the solver
 won't flag.
 
-- **Decomposition.** `y = x1 + x2 + … + xK`. Each component `xk` carries a loss
+- **Decomposition.** `y = x0 + x1 + … + xK`. Each component `xk` carries a loss
   `φk` measuring how implausible that shape is; the decomposition minimizes the
   total loss. The smaller a component's loss, the more the model believes it.
-- **x1 is always the residual** (mean-square-small, or a robust variant). This
+- **x0 is always the residual** (mean-square-small, or a robust variant). This
   is not a convention: the residual is the one term that can be eliminated in
   closed form, which is exactly what lets structural components be appended —
-  `x2, x3, …` — without renumbering. Downstream code references components by
+  `x1, x2, …` — without renumbering. Downstream code references components by
   **role** (`"trend"`, `"periodic"`), never by index.
 - **The mask gracefully handles missing data.** The consistency `y = Σ xk` is
   imposed only on observed entries. Missing data, held-out validation data, and
@@ -75,7 +75,7 @@ anything.
   reproducible build/solve, tests. Rarely a single solve — see
   [implementation.md](reference/implementation.md).
 - **Review / edit** — existing code, SD or SD-shaped. Read it, map it onto the
-  substrate ("this smoothing spline *is* an x1-residual with a smooth trend and
+  substrate ("this smoothing spline *is* an x0-residual with a smooth trend and
   no mask"), correct footguns, extend append-only. Much classical modeling —
   regression, splines, GAMs, Fourier — is a convex decomposition in disguise;
   recognizing that is the job. See
@@ -159,13 +159,13 @@ built = make_problem(
 )
 out = solve(built)                       # verifies DCP, then solves
 trend = out["values"]["trend"]           # solved arrays, keyed by role
-resid = out["values"]["residual"]        # x1 is always "residual"
+resid = out["values"]["residual"]        # x0 is always "residual"
 df = components_to_frame(out, y=y)        # labeled DataFrame, gaps imputed
 fig = plot_decomposition(out, y=y)       # signal+fit, per-role, residual panels
 ```
 
 `solve` returns the built dict plus `status` and `values` — a dict from role to
-the solved array, including `residual` (x1) and any component aux (a trend
+the solved array, including `residual` (x0) and any component aux (a trend
 slope, the seasonal coefficients). Components are always addressed by **role**,
 never by index, so adding a component later doesn't renumber anything.
 `components_to_frame` wraps the full-length components onto a pandas index (pass
@@ -205,7 +205,7 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
 
 ## Reference
 
-- [formulation.md](reference/formulation.md) — the substrate: x1-residual,
+- [formulation.md](reference/formulation.md) — the substrate: x0-residual,
   masked linking, DCP as the verifiable target, composing bespoke components.
 - [component-catalog.md](reference/component-catalog.md) — convex component
   vocabulary; excluded non-convex classes and their relaxations.

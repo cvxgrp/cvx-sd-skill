@@ -44,7 +44,7 @@ trust.
 - A component is a `Component(role, build)` where
   `build(T) -> (expr, loss, constraints)`; catalog builders and hand-written
   components are the same object. See `reference/formulation.md`.
-- x1 is always the residual; structural components are appended and addressed by
+- x0 is always the residual; structural components are appended and addressed by
   **role**, never index.
 - The default solver is `"CLARABEL"`; `solve(..., verify_dcp=True)` is the
   default and refuses non-DCP problems.

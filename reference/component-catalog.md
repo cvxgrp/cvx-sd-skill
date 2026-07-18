@@ -10,9 +10,9 @@ components=[...])`. Weights follow one convention: **larger weight = stronger
 belief = more regularized** (smoother, sparser, stiffer). Most builders take a
 `role=` string that names the component in the solved output.
 
-## x1: the data-fidelity term (residual)
+## x0: the data-fidelity term (residual)
 
-x1 is always present and always the residual; you choose its loss with
+x0 is always present and always the residual; you choose its loss with
 `make_problem(..., residual_loss=...)`. Pass a **string** for the parameterless
 defaults, or a **factory result** when you need to set a parameter:
 
