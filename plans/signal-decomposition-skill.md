@@ -170,7 +170,7 @@ below are SUPERSEDED — see notes.
 
 ### Naming note
 
-- Package is `signaldecomp`; repo/project is `cvx-signaldecomp-skill`.
+- Import package is `signaldecomp`; repo/project is `cvx-sd-skill`.
 - The File Tree, invariant #7, Parameterization, and Dependencies sections
   below are the ORIGINAL plan and are partially superseded as noted above; kept
   for the design intent they still carry.

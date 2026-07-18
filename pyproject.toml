@@ -1,5 +1,5 @@
 [project]
-name = "cvx-signaldecomp-skill"
+name = "cvx-sd-skill"
 version = "0.1.0"
 description = "Convex signal decomposition for scalar time series (CVXPY)"
 readme = "README.md"
