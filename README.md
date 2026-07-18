@@ -19,7 +19,7 @@ Two things live here, and they're meant to work together:
    consistency constraint is imposed only on observed entries, so the same
    mechanism handles gaps, held-out validation, and imputation.
 
-2. **An agent skill** (`SKILL.md` + forthcoming `reference/`) that teaches a
+2. **An agent skill** (`SKILL.md` + `reference/`) that teaches a
    capable language model to *formulate* signal decompositions well: to
    translate a domain problem into convex components, generate correct CVXPY,
    and wire the results back to interpretable outputs.
@@ -63,7 +63,7 @@ df = components_to_frame(out, y=y)   # labeled components, gaps imputed
 
 ```bash
 uv sync            # or: pip install -e .
-uv run pytest      # 91 tests
+uv run python -m pytest   # 97 tests
 ```
 
 Requires Python ≥ 3.13. Core dependencies: CVXPY, NumPy, SciPy, pandas,
@@ -78,11 +78,12 @@ the core library does not depend on it.
 - [x] Time-axis standardization and the sub-daily heat-map diagnostic
 - [x] Validation & downstream: holdout selection, bootstrap CIs,
       expanding-window stability, reporting / pandas round-trip
-- [x] Test suite (91 passing)
+- [x] Test suite (97 passing)
 - [x] `SKILL.md` — the agent-facing entry point (first draft)
-- [ ] `reference/` — the deep-dive material (formulation, component catalog,
-      periodic & time, model specification, implementation, downstream,
-      recontextualization, marimo, philosophy, gotchas)
+- [ ] `reference/` — the deep-dive material (in progress: **formulation** and
+      **component-catalog** done; periodic & time, model specification,
+      implementation, downstream, recontextualization, marimo, philosophy,
+      gotchas remaining)
 - [ ] Worked examples (PV degradation; hourly electrical load)
 - [ ] Contributor & usage documentation
 

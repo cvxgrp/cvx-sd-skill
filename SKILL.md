@@ -209,6 +209,11 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   masked linking, DCP as the verifiable target, composing bespoke components.
 - [component-catalog.md](reference/component-catalog.md) — convex component
   vocabulary; excluded non-convex classes and their relaxations.
+
+### Planned
+
+The references below are not yet written; the links are placeholders.
+
 - [periodic-and-time.md](reference/periodic-and-time.md) — Fourier periodics,
   float periods, Δ-scaling, leap years, multi-scale, the trend↔seasonal
   confound.
