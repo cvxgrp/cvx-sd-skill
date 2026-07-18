@@ -39,18 +39,39 @@ about *what kind* of low-frequency shape:
   Exposes the intercept and slope as aux (`<role>_a`, `<role>_b`); the slope is
   the per-sample rate of change. `slope_weight` optionally ridge-penalizes the
   slope. Belief: "the trend is a straight line."
+
+  ```python
+  expr = coef[0] + coef[1] * t             # affine: intercept + slope
+  loss = slope_weight * cp.square(coef[1]) # optional ridge on the slope
+  ```
 - **`smooth_trend(weight, order=2, role="trend")`** — mean-square-smooth trend
   penalizing the `order`-th difference. `order=2` (default) penalizes curvature
   (a smooth, freely-bending trend); `order=1` penalizes slope (damps level
   changes). Belief: "the trend is smooth." The workhorse.
+
+  ```python
+  loss = weight * cp.sum_squares(cp.diff(x, k=order))  # order=2: penalize curvature
+  ```
 - **`pwl_trend(weight, role="trend")`** — piecewise-linear trend via an **L1**
   penalty on the second difference (L1 trend filtering). Yields a trend that is
   piecewise linear with a *small number of knots* — interpretable, breakpoint-
   style. Belief: "the trend is mostly straight with a few bends."
+
+  ```python
+  loss = weight * cp.norm1(cp.diff(x, k=2))  # L1 on 2nd difference -> few knots
+  ```
 - **`monotone_trend(weight=0.0, increasing=False, role="trend")`** — an isotonic
   trend, non-increasing by default (set `increasing=True` for non-decreasing).
-  For quantities that cannot reverse — cumulative degradation, wear. Optional
-  `weight` adds second-difference smoothness. Belief: "this only goes one way."
+  For quantities that cannot reverse — cumulative degradation, wear. The default
+  (`weight=0`) is a bare isotonic fit that steps freely between levels — the
+  monotonicity constraint alone permits jumps. Optional `weight` adds
+  second-difference smoothness if you want the climb to be gradual. Belief: "this
+  only goes one way."
+
+  ```python
+  cons = [cp.diff(x) <= 0]                        # non-increasing (>= 0 if increasing)
+  loss = weight * cp.sum_squares(cp.diff(x, k=2)) # optional smoothness (0 if weight=0)
+  ```
 
 `smooth_trend` vs `pwl_trend` is the key choice: L2-on-2nd-diff gives a
 *curving* smooth trend; L1-on-2nd-diff gives a *piecewise-linear* one that
@@ -69,6 +90,11 @@ the trend changes slope.
   = sharper shapes); `weight` regularizes the coefficients. Aux `<role>_theta`
   holds the coefficient vector.
 
+  ```python
+  expr = B @ theta                    # B: truncated-Fourier basis (DC column dropped)
+  loss = cp.sum_squares(reg @ theta)  # reg = weighted regularizer (weight baked in)
+  ```
+
 "Seasonal" is just one use — daily, weekly, or any cyclic pattern is expressed
 the same way. See [periodic-and-time.md](periodic-and-time.md) for Δ-scaling,
 leap years, harmonics-per-scale, and the trend↔seasonal confound.
@@ -81,12 +107,22 @@ Unlike time-based components, these are functions of an external covariate `z`
 - **`exog_linear(z, weight=0.0, role="exog")`** — a linear response `beta * z`
   (e.g. load proportional to irradiance). Aux `<role>_beta` is the scalar
   coefficient. Belief: "the signal responds linearly to `z`."
+
+  ```python
+  expr = beta * z                 # linear response to covariate z
+  loss = weight * cp.square(beta) # optional ridge on the coefficient
+  ```
 - **`exog_spline(z, n_knots=10, knots=None, weight=0.01, role="exog")`** — a
   smooth, possibly nonlinear response via a natural cubic spline `H(z) @ coef`
   (linear beyond the boundary knots; constant column dropped). `weight` is a
   ridge penalty controlling smoothness; more knots = more flexible. Aux
   `<role>_coef`. Belief: "the signal responds smoothly but nonlinearly to `z`"
   (e.g. a U-shaped load-vs-temperature curve).
+
+  ```python
+  expr = H(z) @ coef                   # natural cubic spline basis in z (const col dropped)
+  loss = weight * cp.sum_squares(coef) # ridge -> smoothness
+  ```
 
 ## Wrappers: adding constraints to any component
 
@@ -98,38 +134,90 @@ composition by wrapping:
   lower=0.0)` is a nonnegative smooth trend.
 - **`nonneg(inner)`** — shorthand for `bounded(inner, lower=0.0)`.
 
+  ```python
+  expr, loss, cons = inner.build(T)   # inner component unchanged
+  cons += [x >= lower, x <= upper]    # add box (either bound optional)
+  ```
+
 ## Reading the results
 
 `out["values"]` maps each `role` to its solved array, plus `"residual"`, plus
 the aux quantities each builder exposes (`trend_a`, `trend_b`, `exog_beta`,
 `periodic_theta`, ...). Address everything by role; never by index.
 
-## Excluded: non-convex classes, and what to use instead
+## Sparsity: a pattern, not a single component
 
-This skill is convex-only. Some tempting structures are genuinely non-convex;
-forcing them in would break the DCP guarantee that makes generation safe. The
-honest move is to know the boundary and reach for the convex stand-in.
+"Few nonzeros" appears in two distinct convex forms. Naming them keeps you from
+reaching for a bare `l1` when you want something structural.
 
-**Refuse (no in-scope convex equivalent):**
+**Synthesis sparsity** — the component is a sparse combination of dictionary
+atoms; sparsity lives in the *coefficients*:
 
-- **finite-set / Boolean / integer** values (a component constrained to
-  `{0, 1}` or a discrete set) — mixed-integer, not convex.
-- **exact cardinality / true L0** ("*exactly* k nonzeros") — combinatorial.
-- **Markov / regime-switching states** with discrete transitions.
+```python
+theta = cp.Variable(A.shape[1])
+xk    = A @ theta                  # component = sparse mix of A's columns (atoms)
+loss  = weight * cp.norm1(theta)   # few atoms selected
+```
 
-For these, the problem is outside V1; see the operating band in
-[philosophy.md](philosophy.md).
+`A = I` is the special case — exactly the `sparse(weight)` builder (few nonzero
+*samples*: spikes, outliers). Other dictionaries give other structure: a
+step/integrator dictionary -> a component with few jumps; a bank of event
+templates -> a few events.
 
-**Relax (a convex surrogate captures the intent):**
+**Analysis sparsity** — a linear transform of the component is sparse; sparsity
+lives in `L @ x`:
 
-- **sparsity / "few nonzeros"** → **`sparse(weight)`**, the L1 surrogate for
-  cardinality. Zero at most entries, nonzero at a few. Use for outliers, spikes,
-  rare events.
-- **"a few breakpoints" / near-L0 structure** → L1 gets you most of the way
-  (`pwl_trend`, `sparse`). For a *sharper* approximation to L0 — fewer, cleaner
-  nonzeros with less magnitude bias — **iteratively reweighted L1 (IRL1)**: solve,
-  then re-solve with per-entry weights `1/(|prev| + eps)`, 2–3 times. Each pass
-  drives already-small entries toward zero and frees large ones from shrinkage.
+```python
+x    = cp.Variable(T)
+loss = weight * cp.norm1(L @ x)    # few nonzeros in the transformed domain
+```
+
+`L = diff(k=2)` gives `pwl_trend` (few slope changes); `L = diff` gives few level
+changes (piecewise-constant).
+
+So two of the headline components are instances of this one idea: **`sparse` is
+synthesis with `A = I`; `pwl_trend` is analysis with `L = diff(k=2)`.** That is
+"compose, don't shop" in miniature — pick the `A` or `L` that matches your belief.
+
+Two honest notes. A **bare `l1` on the residual** (`residual_loss="l1"`) is not
+usually the best way to get robustness. The classic, more useful construction is
+a **decomposition**: keep the default `l2` (`sum_squares`) residual for the
+Gaussian bulk and append a **`sparse` component** for the few large outliers —
+`sum_squares(residual) + w * cp.norm1(x_sparse)`, two terms on two variables. The
+residual takes the bulk; the sparse component takes the spikes. (Similar gestalt
+to elastic net, but *not* elastic net — elastic net puts both penalties on one
+variable; here they are on two.) Either sparse form can be **sharpened toward
+true L0** by reweighting the `l1(...)` (IRL1, below).
+
+## Beyond convex: sequences of convex solves
+
+This skill is convex-only, and a single convex solve is *globally optimal* by
+construction — that is the guarantee that makes generation safe. Some tempting
+structures are genuinely non-convex and cannot be one such solve. But many are
+still approachable as a **sequence of convex solves**: you lift the hard problem
+into repeated convex problems, each exact, using the previous solution to guide
+the next.
+
+These sequence methods are **local search heuristics: they often work quite well
+in practice, and while global optimality cannot be guaranteed, useful solutions
+are common.** That is the honest trade — you give up the single-solve certificate
+for reach, and you judge the result by *looking*, not by a guarantee.
+
+**Genuinely out of scope** (no good in-scope convex-sequence heuristic; see the
+operating band in [philosophy.md](philosophy.md)):
+
+- **Markov / regime-switching states** with discrete transition dynamics.
+- anything requiring a *proven* global integer optimum (that is mixed-integer
+  programming, a different tool).
+
+**Approachable as a convex sequence:**
+
+- **near-L0 / "a few nonzeros," sharper than plain L1** → **iteratively
+  reweighted L1 (IRL1)**. Plain L1 (the `sparse` / `pwl_trend` patterns above, see
+  [Sparsity](#sparsity-a-pattern-not-a-single-component)) is a biased L0 surrogate;
+  IRL1 sharpens it. Solve, then re-solve with per-entry weights `1/(|prev| + eps)`,
+  2–3 times. Each pass drives already-small entries toward zero and frees large
+  ones from shrinkage.
 
   ```python
   weight = 0.02                            # start LOOSE; see note below
@@ -152,9 +240,27 @@ For these, the problem is outside V1; see the operating band in
   IRL1 is the canonical "second problem uses the first's output" pattern, and it
   is DPP-friendly (only the weights change between solves). Fuller treatment,
   including the fast re-solve, is in [implementation.md](implementation.md).
-- **monotone-with-jumps** → `monotone_trend` plus a `sparse` component for the
-  jumps.
+- **Boolean / finite-set values** → **relax-round-polish**. Relax the discrete
+  set `{0, 1}` to its convex hull `[0, 1]`, solve, round to the nearest feasible
+  point, then *fix* the rounded values and re-solve any remaining free variables
+  (the "polish"). Same class as IRL1 — a non-convex problem lifted into a short
+  sequence of convex solves.
 
-The rule of thumb: if the belief is "few / mostly-zero / rare," there is almost
-always a convex L1-flavored relaxation. If it is "exactly discrete," there is
-not — and that is a scope boundary, not a formulation to force.
+  ```python
+  # relax: b in [0, 1] instead of {0, 1}
+  b = cp.Variable(T)
+  solve_problem_with(b, constraints=[b >= 0, b <= 1])   # convex
+  # round: snap to the discrete set
+  b_fixed = (b.value > 0.5).astype(float)
+  # polish: fix b, re-solve the remaining free variables (still convex)
+  solve_problem_with(b_fixed, free=other_vars)
+  ```
+
+  In practice the relaxed solution often lands near the box corners already, so
+  rounding is a small correction; the polish pass recovers the other variables
+  exactly given the discrete choice.
+
+The rule of thumb: "few / mostly-zero / rare" almost always has a convex
+L1-flavored relaxation (one solve); "discrete-valued" is reachable by a convex
+sequence (relax-round-polish, a heuristic); "provably-optimal discrete" is out of
+scope. Know which one you are in.
