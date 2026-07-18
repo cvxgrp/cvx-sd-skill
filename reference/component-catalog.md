@@ -78,22 +78,43 @@ about *what kind* of low-frequency shape:
 localizes change into a few kinks. Reach for `pwl` when you care about *where*
 the trend changes slope.
 
-## Periodic
+## Multiperiodic (strictly periodic is a special case)
 
 - **`multiperiodic(periods, num_harmonics=6, weight=0.1, role="periodic")`** — a
-  truncated-Fourier component over one or more periods, **DC column removed**
-  (the constant offset belongs to the trend intercept, not here — this is what
-  keeps trend and periodic from fighting over the mean). `periods` are in
-  **samples**: convert from physical time with `period_samples(seconds, delta)`.
-  Pass a sequence for multi-scale seasonality (daily + weekly + yearly) in one
-  joint basis. `num_harmonics` sets the number of sin/cos pairs per period (more
-  = sharper shapes); `weight` regularizes the coefficients. Aux `<role>_theta`
-  holds the coefficient vector.
+  joint **quasi-periodic** model over one or more periods. With a single period
+  it reduces to an ordinary truncated-Fourier series — the strictly-periodic
+  special case. With several periods its distinctive power is the **cross-terms**.
+
+  The basis is `[offset] + [a Fourier block per period] + [pairwise cross-terms]`,
+  with the **DC/offset column dropped** (the constant belongs to the trend
+  intercept — this is what keeps trend and periodic from fighting over the mean).
+  The **cross-terms are products of one period's harmonics with another's**, so
+  the coefficients don't merely set each period's amplitude independently — they
+  let **the *shape* of the short-period cycle change as the long period
+  advances.** A model with daily and yearly periods can represent a *daily
+  profile that reshapes across the seasons* — a summer day and a winter day with
+  genuinely different within-day curves — not just the same daily curve scaled up
+  and down. Turn the cross-terms off and you are back to the strictly-periodic
+  case: a fixed shape whose amplitude alone can vary.
+
+  `num_harmonics` sets harmonics per period; **`max_cross_k`** caps how many
+  harmonics per side enter the cross-terms — the knob for how much shape-drift
+  the model can express (and the basis width). `periods` are in **samples**
+  (convert with `period_samples(seconds, delta)`); pass a sequence for
+  multi-scale structure. Aux `<role>_theta` holds the coefficient vector.
 
   ```python
-  expr = B @ theta                    # B: truncated-Fourier basis (DC column dropped)
-  loss = cp.sum_squares(reg @ theta)  # reg = weighted regularizer (weight baked in)
+  expr = B @ theta                    # B = [offset | per-period blocks | cross-terms], DC dropped
+  loss = cp.sum_squares(reg @ theta)  # reg diagonal: weight * (2*pi/sqrt(P)) * i for harmonic i
+                                      # -> Dirichlet (derivative) energy: higher harmonics cost more
   ```
+
+  The `reg` term is a **Dirichlet-energy penalty**: a diagonal weight
+  `weight * (2*pi/sqrt(P)) * i` on harmonic `i` of period `P` (the `sqrt(P)`
+  normalizes across periods; the offset is unregularized). It is the leash on all
+  that shape-flexibility — high harmonics cost more, biasing toward the smoothest
+  periodic shape consistent with the data. `weight` trades shape-fidelity against
+  smoothness.
 
 "Seasonal" is just one use — daily, weekly, or any cyclic pattern is expressed
 the same way. See [periodic-and-time.md](periodic-and-time.md) for Δ-scaling,
