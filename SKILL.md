@@ -19,15 +19,31 @@ This applies convex optimization theory and the basic concept that a loss is an
 encoding of prior belief (an ℓ₂ penalty is a Gaussian belief, ℓ₁ a Laplace one,
 a constraint a hard prior); this skill is about formulating decomposition
 consistently, so models compose, extend, and can be generated and checked
-safely — not about a fixed catalog of components. cvxpy is the modeling language
-and disciplined convex programming (DCP) is the type system that ensures
-generated problems are convex.
+safely — not about a fixed catalog of components. Three things work together:
+**cvxpy** is the base modeling language; **`signaldecomp`** is a scaffold of
+useful decomposition patterns already laid out; and **disciplined convex
+programming (DCP)** is the type system that keeps everything convex — hence
+testable and composable, and safe to generate.
+
+That middle layer, `signaldecomp`, is an installed package you build *on*: it
+holds the invariants below by construction (the residual, the mask, Δ-scaled
+periods), and lets components compose uniformly whether they come from its
+catalog or you write them by hand. It is a scaffold, not a menu of canned
+answers — reach for it to get the fiddly details right for free, and spend your
+attention on the belief each component encodes. **Its components are short and
+written to be read**: the source is part of the documentation, and the
+`examples/` are complete worked translations. Read them — that is how the
+patterns become yours to vary, not just call. (Locate the installed source with
+`python -c "import signaldecomp; print(signaldecomp.__file__)"`; in this repo it
+is `src/signaldecomp/`.)
 
 ## The substrate
 
-Every decomposition sits on the same four invariants. Get these right and the
-rest composes; get one wrong and the model is subtly broken in ways the solver
-won't flag.
+Every decomposition sits on the same four invariants. `signaldecomp` enforces
+them by construction — so when you build with it, these are guarantees, not
+chores. Understand them anyway: they are what your model *means*, and when you
+hand-write a component or read someone else's code, getting one wrong breaks the
+model in ways the solver won't flag.
 
 - **Decomposition.** `y = x0 + x1 + … + xK`. Each component `xk` carries a loss
   `φk` measuring how implausible that shape is; the decomposition minimizes the
@@ -108,8 +124,11 @@ L1 pins the level at zero without shaping the fit.
 **Reach for `signaldecomp`** when a component *is* a catalog entry — it's tested
 and correct on the fiddly details (masked linking, dropped DC column, Δ-scaled
 periods). But the entries are worked patterns, not a fence: a `pwl_trend` *is*
-`weight * norm1(diff(x, k=2))`. Once you see that, you write the variants the
-catalog never anticipated.
+`weight * norm1(diff(x, k=2))` — and you can confirm that in about ten seconds
+by reading its builder. **Do that before you adapt one:** read `components.py`
+in the `signaldecomp` source (find it via `signaldecomp.__file__`); each builder
+is a few lines, and seeing them is exactly how you learn to write the variants
+the catalog never anticipated.
 
 **DCP is the check that makes this safe** — compose the pieces, then let CVXPY
 confirm the whole is convex. `solve(..., verify_dcp=True)` (the default) refuses
@@ -176,7 +195,10 @@ structural role, and the signed residual.
 
 The `components` list is the seam: a catalog builder and a hand-written
 `Component` sit in it side by side and go through the same solve — the two paths
-from "compose, don't shop" plug into one loop.
+from "compose, don't shop" plug into one loop. For a full worked translation in
+a real domain — the two moves applied end to end, not just the mechanics — read
+an `examples/` file before building in a new domain of your own; it is faster
+than reconstructing the judgment from scratch.
 
 ## Footguns
 

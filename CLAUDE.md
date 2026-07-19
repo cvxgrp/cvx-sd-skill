@@ -39,6 +39,13 @@ checked, not remembered. When editing docs:
 This is the same discipline the skill teaches its users: construct, verify, then
 trust.
 
+- **Read the scaffold, don't just call it.** Before adapting a component, `Read`
+  its builder in the `signaldecomp` source (`components.py`; find the install
+  with `signaldecomp.__file__`) — they are a few lines each, and the source *is*
+  the pattern documentation. Before building in a new problem domain, read the
+  nearest `examples/` file. The package is written to be read; treating it as an
+  opaque API throws away most of what it teaches.
+
 ## Package conventions
 
 - A component is a `Component(role, build)` where
