@@ -231,6 +231,8 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   masked linking, DCP as the verifiable target, composing bespoke components.
 - [component-catalog.md](reference/component-catalog.md) — convex component
   vocabulary; excluded non-convex classes and their relaxations.
+- [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
+  the widget as a specification instrument; composing with the marimo skills.
 
 ### Planned
 
@@ -250,8 +252,6 @@ The references below are not yet written; the links are placeholders.
   expanding-window stability, reporting, the pandas round-trip.
 - [recontextualization.md](reference/recontextualization.md) — recognizing
   latent convex decompositions in classical / hand-rolled code.
-- [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
-  the widget as a specification instrument.
 - [philosophy.md](reference/philosophy.md) — why convex, under-specification,
   the operating band, the broader line of work.
 - [gotchas.md](reference/gotchas.md) — the fuller footgun list.
