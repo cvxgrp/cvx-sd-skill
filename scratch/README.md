@@ -6,8 +6,8 @@ it cannot judge whether a plot *looks* right (colormap legibility, gaps reading
 as gray, zero being neutral in diverging maps, tick labels). These scripts
 render galleries to PNGs for manual review.
 
-Generated images (`*.png`) are gitignored; the scripts are kept and committed so
-plots can be re-reviewed after any change.
+Generated artifacts (`*.png`, `scratch/*.csv`) are gitignored; the scripts are
+kept and committed so outputs can be regenerated and re-reviewed after any change.
 
 ## Scripts
 
@@ -34,3 +34,28 @@ plots can be re-reviewed after any change.
 
   Open the printed PNG paths to review. Re-run after any change to
   `reporting.py` plotting.
+
+## Synthetic data + decomposition
+
+- **`make_synthetic_hourly.py`** -- generates a marginally-interesting
+  synthetic hourly signal (~3 months): smooth dip-then-rise trend, daily +
+  weekly multiperiodic seasonal, a sigmoid response to a smooth exogenous
+  covariate `z`, rare large spikes, Gaussian noise, and a 2-day gap. Writes
+  two gitignored CSVs to `scratch/`: `synthetic_hourly.csv` (`timestamp, y, z`
+  -- what a user sees) and `synthetic_hourly_truth.csv` (the true components,
+  for grading recovery). Reproducible (fixed seed).
+
+  ```
+  uv run python scratch/make_synthetic_hourly.py
+  ```
+
+- **`plot_synthetic_decomp.py`** -- solves the signal with `signaldecomp`
+  (`smooth_trend` + daily/weekly `multiperiodic` + `exog_spline` on `z` +
+  `sparse` spikes) and renders `synthetic_decomp.png`: recovered components
+  (solid) overlaid on ground truth (dashed). Trend and exog are de-meaned for
+  a fair shape comparison -- they share an additive-constant DC gauge (see the
+  `dc-gauge-freedom-mean-carrying-components` memory note).
+
+  ```
+  uv run python scratch/plot_synthetic_decomp.py
+  ```

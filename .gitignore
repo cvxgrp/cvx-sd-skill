@@ -28,3 +28,6 @@ examples/pvdaq4_daily_y.csv
 # Private working notes (kept local, not published)
 memories/
 plans/
+
+# generated scratch data (regenerable from scripts)
+scratch/*.csv
