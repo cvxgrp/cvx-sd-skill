@@ -243,6 +243,9 @@ The references below are not yet written; the links are placeholders.
   confound.
 - [time-axis.md](reference/time-axis.md) — standardizing raw timestamps to
   `(y, index, Δ)`; the heat-map diagnostic.
+- [diagnostics.md](reference/diagnostics.md) — general, register-independent
+  data & fit diagnostics: periodogram→periods, variance-explained ranking,
+  fold-and-check, residual- and component-vs-driver as lead-generators.
 - [model-specification.md](reference/model-specification.md) — the Tier 1/2/3
   tuning hierarchy; which knobs to holdout-tune, set by magnitude, or judge by
   looking.

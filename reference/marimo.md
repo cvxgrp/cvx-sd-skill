@@ -44,6 +44,15 @@ classified against a settled backdrop rather than all at once — which is what
 keeps the coupled tuning problem tractable. The order emerges from the data and
 the conversation; it is not decided up front.
 
+**Close the search with a critique, not a verdict.** Before handing off, name
+**at least three things that could be wrong, misspecified, or improvable** —
+candidates *for the user*, not fixes to apply. A component whose form looks a
+little off against its driver, a weight you are unsure of, a period you did not
+test: surfacing these is the skill working (exploration is a dialogue), and it
+respects that the data underdetermines the model — some calls are the user's
+domain prior to make, not the fit's. (Fuller treatment:
+[model-specification.md](model-specification.md).)
+
 ## How the agent inspects data without seeing it
 
 You cannot see a rendered plot — but you are not blind to the data. Exploration
@@ -68,6 +77,12 @@ numerical form the agent *can* read:
   numerically: leftover autocorrelation, residual grouped by time-of-day,
   the largest residual entries (candidate spikes). This is how you iterate
   toward the next component without seeing the fit.
+- **Is each component's *form* right?** Plot a fitted component against its
+  driver (e.g. the exog response vs. its covariate `z`), and its residual
+  against that driver, and look. A clear misfit means the form is wrong; a
+  *small or ambiguous* one is a **lead, not a mandate** — parsimony still favors
+  the simpler form, so flag it for the closing critique rather than reformulating
+  on the spot.
 
 **Let the user be the visual sensor — and ask the right questions.** The user
 sees the widget; you interpret what they report ("the trend dips in winter,"
@@ -78,8 +93,15 @@ not a silent plot, is the exploration.
 
 ## Widget mapping
 
-- **which structural components are in the model** (append-only) → dropdowns /
-  radio buttons.
+- **which structural components are in the model** (append-only) **and what
+  functional form each takes** → dropdowns / radio buttons. A dropdown fits any
+  discrete choice among alternatives: *which* components, and *which form* a
+  component takes (`exog`: linear vs. spline; `trend`: smooth vs. pwl vs.
+  monotone). Exposing form matters because **the data often can't settle it** —
+  parsimony may favor the simpler form while domain knowledge suggests a richer
+  one, and only the user knows which prior to impose; the dropdown makes that a
+  live choice, not a code edit. Like a component-*set* change, a *form* change is
+  structural → a deliberate rebuild, not an instant slider.
 - **weights** → sliders (log-scale, given the order-of-magnitude story).
 - **DPP tells you which knobs are instant.** A weight on fixed data re-solves
   fast (same parametrized problem, no rebuild); changing `T` or the component
