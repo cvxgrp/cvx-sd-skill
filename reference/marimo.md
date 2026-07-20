@@ -59,30 +59,17 @@ You cannot see a rendered plot — but you are not blind to the data. Exploratio
 runs on two channels working together.
 
 **Compute the structure the eye would catch.** Most visual judgments have a
-numerical form the agent *can* read:
-
-- **Dominant periods** — a periodogram (`np.abs(np.fft.rfft(y - y.mean()))`)
-  ranks candidate cycles as numbers; the top peaks point straight at which
-  `multiperiodic` periods to try. (Low-frequency peaks are trend leakage, so
-  treat it as a candidate-finder, not proof.)
-- **Which source is largest** — fit a candidate and report the drop in residual
-  variance. This makes "largest sources of variation first" *rankable*: on an
-  hourly signal, trend-only might explain 32%, adding the daily cycle jumps it to
-  96%, the weekly refinement to 98% — so daily dominates, weekly is a
-  refinement, and the build order is now evidence, not a guess.
-- **Daily/periodic shape** — fold with `fold_to_2d(y, delta)` and take
-  `np.nanmean(D, axis=1)`; the time-of-day profile (peak hour, trough hour,
-  flatness) is legible as an array without a heatmap.
-- **What's still missing** — after a trial fit, inspect the *residual*
-  numerically: leftover autocorrelation, residual grouped by time-of-day,
-  the largest residual entries (candidate spikes). This is how you iterate
-  toward the next component without seeing the fit.
-- **Is each component's *form* right?** Plot a fitted component against its
-  driver (e.g. the exog response vs. its covariate `z`), and its residual
-  against that driver, and look. A clear misfit means the form is wrong; a
-  *small or ambiguous* one is a **lead, not a mandate** — parsimony still favors
-  the simpler form, so flag it for the closing critique rather than reformulating
-  on the spot.
+numerical form the agent *can* read: dominant periods (periodogram), which
+source is largest (nested variance-explained), the daily/periodic shape (fold
+and read the profile), what is still missing (residual inspection), and whether
+each component's *form* is right (component vs. driver). These techniques are
+**register-independent** — they apply to a plain script or a model review just as
+much as to a notebook — so they live in their own reference:
+[**diagnostics.md**](diagnostics.md). Read it for the toolkit and its traps (the
+sideband/trend-leakage caveats on the periodogram, and the "don't average over a
+modulating period" fold trap). Here we only note their role *in the live
+session*: the numeric channel is what turns "look at the data" into targeted,
+answerable questions.
 
 **Let the user be the visual sensor — and ask the right questions.** The user
 sees the widget; you interpret what they report ("the trend dips in winter,"
