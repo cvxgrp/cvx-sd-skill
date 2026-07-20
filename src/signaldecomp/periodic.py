@@ -110,6 +110,8 @@ def multiperiodic(
         # calling build(), so populating it here is sufficient.
         comp.aux[f"{role}_theta"] = theta
         expr = basis_mat @ theta
+        # SYNTHESIS: penalty is in coefficient (theta) space -- never averaged
+        # by signal length. The weight lives inside reg.
         loss = cp.sum_squares(reg @ theta)
         return expr, loss, []
 

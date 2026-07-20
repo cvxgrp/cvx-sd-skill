@@ -67,6 +67,8 @@ def smooth_trend(weight, order=2, role="trend"):
 
     def build(T):
         x = cp.Variable(T, name=role)
+        # Analysis + GLOBAL (l2^2 energy): an aggregate 'overall smoothness'
+        # claim, NOT a per-entry one -- so it is NOT averaged by length.
         loss = weight * cp.sum_squares(cp.diff(x, k=order))
         return x, loss, []
 
@@ -85,7 +87,9 @@ def pwl_trend(weight, role="trend"):
 
     def build(T):
         x = cp.Variable(T, name=role)
-        loss = weight * cp.norm1(cp.diff(x, k=2))
+        d = cp.diff(x, k=2)
+        # Per-element normalization (see smooth_trend).
+        loss = weight / d.shape[0] * cp.norm1(d)
         return x, loss, []
 
     comp.build = build
@@ -114,6 +118,7 @@ def monotone_trend(weight=0.0, increasing=False, role="trend"):
         x = cp.Variable(T, name=role)
         d = cp.diff(x)
         cons = [d >= 0] if increasing else [d <= 0]
+        # Analysis + GLOBAL smoothness (see smooth_trend): not length-averaged.
         loss = weight * cp.sum_squares(cp.diff(x, k=2)) if weight else 0
         return x, loss, cons
 
@@ -132,7 +137,8 @@ def sparse(weight, role="sparse"):
 
     def build(T):
         x = cp.Variable(T, name=role)
-        loss = weight * cp.norm1(x)
+        # Per-element normalization (see smooth_trend).
+        loss = weight / x.shape[0] * cp.norm1(x)
         return x, loss, []
 
     comp.build = build
@@ -226,6 +232,8 @@ def exog_spline(z, n_knots=10, knots=None, weight=1e-2, role="exog"):
         coef = cp.Variable(H.shape[1], name=f"{role}_coef")
         comp.aux[f"{role}_coef"] = coef
         expr = H @ coef
+        # SYNTHESIS: penalty is in coefficient space (fixed basis dim, no
+        # signal-length dependence) -- never averaged by length.
         loss = weight * cp.sum_squares(coef)
         return expr, loss, []
 
