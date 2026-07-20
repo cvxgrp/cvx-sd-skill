@@ -86,6 +86,9 @@ No model was specified up front. The agent used the skill's substrate,
 diagnostics, and tuning hierarchy to *formulate* one from the data and hand back
 a specification — which is the thing a package alone does not give you.
 
+*This is a simple example, with data generated explicitly to match the
+components in the code base. It is a proof of concept, not a guarantee.*
+
 ## Install
 
 ```bash
