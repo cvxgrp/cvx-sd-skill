@@ -177,15 +177,21 @@ Reading the pieces as `ell + I`:
   penalty on the *negative* first differences: it costs downward steps, so the
   decline is slow and gradual. Upward steps are unpenalized, so recoveries snap
   back freely.
-- `w_v * cp.norm1(x)` with **w_v tiny (~1e-6)** — a whisper of L1 that pins the
-  level at the zero baseline. It is a tiebreaker, not a shaping force: without
-  it the level is not uniquely determined; too much of it flattens the
-  component entirely.
+- `w_v * cp.norm1(x)` with **w_v small (~1e-4)** — a light L1 that pins the
+  level at the zero baseline. It is a tiebreaker, not a shaping force: too
+  *little* and the level walks off (it does not return to zero after a wash);
+  too *much* and it drags the whole trough up toward zero, erasing the soiling
+  depth. The working value is the *smallest* one that stops the walk-off.
 - `[x <= 0]` — the indicator `I`: the signal is a loss relative to baseline, so
   it is constrained non-positive.
 
-This is DCP-valid (verify, don't assert), and with coherent weights it recovers
-the sawtooth: slow penalized declines, sharp free recoveries to zero.
+This is DCP-valid (verify, don't assert). **Tune it as a sequence:** first set
+`w_v` to the smallest value that keeps the level returning to zero after each
+recovery (~1e-4 here — too small and it walks off, too large and it flattens the
+trough), then tune `w_d`, the group-lasso drift penalty, for a coherent gradual
+decline (~1e-2 here; insensitive across an order of magnitude — it is the
+smoothness knob once the pin is set). With coherent weights it recovers the
+sawtooth: slow penalized declines, sharp free recoveries to zero.
 
 **These composed costs are tuning-sensitive, and they fail silently.** Too heavy
 a pin (`w_v`) flattens the component; too heavy a drift penalty (`w_d`) erases

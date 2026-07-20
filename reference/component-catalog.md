@@ -58,7 +58,8 @@ about *what kind* of low-frequency shape:
   style. Belief: "the trend is mostly straight with a few bends."
 
   ```python
-  loss = weight * cp.norm1(cp.diff(x, k=2))  # L1 on 2nd difference -> few knots
+  d = cp.diff(x, k=2)
+  loss = weight / d.shape[0] * cp.norm1(d)  # L1 on 2nd diff (per-entry: /dim) -> few knots
   ```
 - **`monotone_trend(weight=0.0, increasing=False, role="trend")`** — an isotonic
   trend, non-increasing by default (set `increasing=True` for non-decreasing).
@@ -181,7 +182,8 @@ loss  = weight * cp.norm1(theta)   # few atoms selected
 ```
 
 `A = I` is the special case — exactly the `sparse(weight)` builder (few nonzero
-*samples*: spikes, outliers). Other dictionaries give other structure: a
+*samples*: spikes, outliers), whose loss is `weight / x.shape[0] * cp.norm1(x)`
+(per-entry normalized, since sparsity is a local/density claim). Other dictionaries give other structure: a
 step/integrator dictionary -> a component with few jumps; a bank of event
 templates -> a few events.
 
@@ -190,7 +192,8 @@ lives in `L @ x`:
 
 ```python
 x    = cp.Variable(T)
-loss = weight * cp.norm1(L @ x)    # few nonzeros in the transformed domain
+Lx   = L @ x
+loss = weight / Lx.shape[0] * cp.norm1(Lx)  # few nonzeros; per-entry (/dim) as it is a local claim
 ```
 
 `L = diff(k=2)` gives `pwl_trend` (few slope changes); `L = diff` gives few level
@@ -241,11 +244,12 @@ operating band in [philosophy.md](philosophy.md)):
   ones from shrinkage.
 
   ```python
-  weight = 0.02                            # start LOOSE; see note below
+  weight = 1.0                             # start LOOSE (local scale ~1-3); see note below
   w = np.ones(T - 2)
   for _ in range(3):                       # 2-3 iterations ~ L0
       x = cp.Variable(T)
-      loss = weight * cp.norm1(cp.multiply(w, cp.diff(x, k=2)))
+      d = cp.diff(x, k=2)
+      loss = weight / d.shape[0] * cp.norm1(cp.multiply(w, d))
       # ... solve with this component ...
       w = 1.0 / (np.abs(np.diff(x.value, n=2)) + 1e-3)
   ```
@@ -255,8 +259,10 @@ operating band in [philosophy.md](philosophy.md)):
   overcomplete (many small knots); reweighting then drives the spurious ones to
   zero and keeps the real ones, converging to the true breakpoint count in 2–3
   iterations. Starting from a *tight* (high-weight) fit instead collapses the
-  component toward a straight line and loses real structure. As always in this
-  regime, weights are small — think `~1e-2`, not `~1`.
+  component toward a straight line and loses real structure. Weight scale is
+  per **penalty class**: l1-sparsity penalties like this one are 1/T-normalized,
+  so their natural weights are **O(1)** (start ~1-3); l2²-smoothness weights are
+  unscaled and larger. See [formulation.md](formulation.md).
 
   IRL1 is the canonical "second problem uses the first's output" pattern, and it
   is DPP-friendly (only the weights change between solves). Fuller treatment,

@@ -60,9 +60,17 @@ trust.
 
 ## Practical calibration notes
 
-- **Regularization weights in this library run small — think `~1e-2`, not
-  `~1`.** If a composed component comes out degenerate (flattened, collapsed to
-  a line), *lower the weight* before concluding the formulation is wrong.
+- **Natural weight scale depends on the penalty class** (not a single number).
+  *Analysis+local* penalties (l1 sparsity: `sparse`, `pwl_trend`) are
+  normalized by `1/T`, so their natural weights are **O(1)** (pwl near-truth
+  ~10-100 on T~300). *Analysis+global* penalties (l2² energy: `smooth_trend`,
+  `monotone_trend` smoothness) and *synthesis* penalties (coefficient-space:
+  `multiperiodic`, `exog_spline`) are **unscaled** — their weights are larger
+  and length-dependent (`smooth_trend` ~1e2-1e3+). See
+  `reference/formulation.md`'s synthesis/analysis split for why.
+- **Degeneracy is directional:** a component flattened/collapsed to a line →
+  weight too high → lower it; a component chasing noise (too many knots/spikes)
+  → weight too low → raise it. Judge against the class's natural scale above.
 - **Check whether a bare constraint already gives the behavior before adding a
   penalty.** E.g. bare `monotone_trend` (weight=0) already steps between levels;
   it needs no extra sparse term to "allow jumps."
