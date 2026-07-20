@@ -61,6 +61,17 @@ about *what kind* of low-frequency shape:
   d = cp.diff(x, k=2)
   loss = weight / d.shape[0] * cp.norm1(d)  # L1 on 2nd diff (per-entry: /dim) -> few knots
   ```
+- **`pwc_trend(weight, role="trend")`** — piecewise-**constant** trend via an
+  **L1** penalty on the *first* difference. Holds a level and shifts in a small
+  number of steps — a level-shift / regime / step-change signal. The
+  first-difference analogue of `pwl_trend`: `pwl` localizes *slope* changes,
+  `pwc` localizes *level* changes. Belief: "the level is constant except for a
+  few shifts."
+
+  ```python
+  d = cp.diff(x)
+  loss = weight / d.shape[0] * cp.norm1(d)  # L1 on 1st diff (per-entry: /dim) -> few level shifts
+  ```
 - **`monotone_trend(weight=0.0, increasing=False, role="trend")`** — an isotonic
   trend, non-increasing by default (set `increasing=True` for non-decreasing).
   For quantities that cannot reverse — cumulative degradation, wear. The default
@@ -78,6 +89,46 @@ about *what kind* of low-frequency shape:
 *curving* smooth trend; L1-on-2nd-diff gives a *piecewise-linear* one that
 localizes change into a few kinks. Reach for `pwl` when you care about *where*
 the trend changes slope.
+
+### Difference-penalty lexicon (the 2x2) and how length-scaling depends on it
+
+The trend penalties are all a **norm of a difference of `x`** — an *analysis*
+penalty (sparsity/energy in `L @ x`, here `L = k`-th difference). Two choices,
+norm and difference-order, give a small named vocabulary:
+
+| | **L1** of the difference (local: few nonzeros) | **L2²** of the difference (global: small total energy) |
+|---|---|---|
+| **1st diff** `diff(x)` | few *level changes* → **piecewise-constant** (`pwc_trend`) | small total *level variation* → a gently drifting level (`smooth_trend(order=1)`) |
+| **2nd diff** `diff(x,2)` | few *slope changes* → **piecewise-linear** (`pwl_trend`) | small total *curvature* → **smooth** (`smooth_trend`) |
+
+1st-difference forms are the level-analogues of the 2nd-difference trends, and
+both have builders: `pwc_trend` is the L1 case (piecewise-constant — few level
+shifts, a step/segmentation signal), and `smooth_trend(order=1)` is the L2² case
+(a level that resists change). The pattern generalizes to any `k`-th difference,
+but **in practice `k > 2` is essentially never useful** — there is no common belief "few/small *third* derivative," so the
+named cases are `k = 1` (level) and `k = 2` (slope). `smooth_trend`'s `order=`
+is the escape hatch if you ever need another.
+
+**Why the L1 forms get `1/T`-normalized and the L2² forms do not** (this is the
+[loss-normalization](formulation.md) rule made concrete on one operator):
+
+- **L1 of a difference is a LOCAL claim** — "few nonzero differences." It prices
+  the *count / density* of active change-points, a per-entry quantity that grows
+  with how many entries you have. Dividing by the difference length (`1/T`)
+  restores the per-entry meaning, so the weight means the same thing regardless
+  of record length. Hence `sparse` and `pwl_trend` carry the `/dim` factor.
+- **L2² of a difference is a GLOBAL claim** — "small *total* squared variation /
+  curvature." It prices an *aggregate* quantity; the sum itself is the meaning
+  (a discrete stand-in for an integrated roughness like `∫ (x'')²`). Averaging
+  it per-entry would dilute an "overall smoothness" belief into a "per-point"
+  one — not the same belief — and empirically forces absurd weights. Hence
+  `smooth_trend`/`monotone_trend` smoothness are left un-normalized.
+
+So the norm you pick does two things at once: L1 vs L2² selects
+local-sparse vs global-smooth shape, AND determines whether the weight is
+length-scaled. They are the same distinction (local vs global) seen from two
+sides.
+
 
 ## Multiperiodic (strictly periodic is a special case)
 

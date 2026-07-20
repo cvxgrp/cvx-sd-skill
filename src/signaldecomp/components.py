@@ -96,6 +96,28 @@ def pwl_trend(weight, role="trend"):
     return comp
 
 
+def pwc_trend(weight, role="trend"):
+    """Piecewise-constant trend via an l1 penalty on the first difference.
+
+    The l1 first difference yields a trend that holds a level and shifts in a
+    small number of steps -- a level-shift / regime / step-change signal. It is
+    the first-difference analogue of pwl_trend (which is l1 on the second
+    difference): pwl localizes *slope* changes, pwc localizes *level* changes.
+    """
+    comp = Component(role=role, build=None)
+
+    def build(T):
+        x = cp.Variable(T, name=role)
+        d = cp.diff(x)
+        # Analysis + LOCAL (l1 sparsity of level changes): per-entry density
+        # claim, so normalized by the penalized vector's length (see pwl_trend).
+        loss = weight / d.shape[0] * cp.norm1(d)
+        return x, loss, []
+
+    comp.build = build
+    return comp
+
+
 def monotone_trend(weight=0.0, increasing=False, role="trend"):
     """Monotone (isotonic) trend: non-increasing by default.
 

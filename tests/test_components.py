@@ -69,6 +69,26 @@ def test_linear_trend_exposes_slope_and_intercept():
     assert abs(out["values"]["trend_b"] - b) < 0.005
 
 
+def test_pwc_trend_recovers_piecewise_constant():
+    """L1 on the first difference recovers a few-level-shift (piecewise-constant)
+    signal: high correlation and a small number of level changes."""
+    rng = np.random.default_rng(11)
+    T = 200
+    true = np.zeros(T)
+    true[:70] = 1.0
+    true[70:140] = -0.5
+    true[140:] = 0.3
+    y = true + 0.05 * rng.standard_normal(T)
+    from signaldecomp import pwc_trend
+    out = solve(make_problem(y, components=[pwc_trend(weight=0.5, role="level")]))
+    assert out["status"] in _OPTIMAL
+    x = out["values"]["level"]
+    assert np.corrcoef(x, true)[0, 1] > 0.99
+    # holds a level then shifts: few large first differences (truth has 2)
+    n_changes = int(np.sum(np.abs(np.diff(x)) > 1e-2))
+    assert 2 <= n_changes <= 12
+
+
 def test_nonneg_wrapper_enforces_lower_bound():
     rng = np.random.default_rng(4)
     T = 200
@@ -97,7 +117,7 @@ def test_all_builders_satisfy_dcp_contract():
     reference/formulation.md, reference/component-catalog.md)."""
     import cvxpy as cp
     from signaldecomp import (
-        linear_trend, smooth_trend, pwl_trend, monotone_trend, sparse,
+        linear_trend, smooth_trend, pwl_trend, pwc_trend, monotone_trend, sparse,
         multiperiodic, exog_linear, exog_spline,
     )
     T = 120
@@ -106,6 +126,7 @@ def test_all_builders_satisfy_dcp_contract():
         "linear_trend": linear_trend(role="c"),
         "smooth_trend": smooth_trend(weight=1e1, role="c"),
         "pwl_trend": pwl_trend(weight=1e0, role="c"),
+        "pwc_trend": pwc_trend(weight=1e0, role="c"),
         "monotone_trend": monotone_trend(weight=0.0, role="c"),
         "sparse": sparse(weight=1e0, role="c"),
         "multiperiodic": multiperiodic(periods=24.0, num_harmonics=3, role="c"),
