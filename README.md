@@ -59,6 +59,33 @@ out = solve(built)
 df = components_to_frame(out, y=y)   # labeled components, gaps imputed
 ```
 
+## Potential agentic use
+
+The code above is the *library*. The point of the **skill** is what a capable
+agent can do with it — which is the part that answers "why an agent skill, not
+just a package?" Here is a fresh context, cold: the user drops in a CSV and the
+skill, nothing else.
+
+> **User:** hi, i'm trying to work on `@synthetic_hourly.csv`. I would like to
+> use `@skills/cvx-sd-skill/SKILL.md`
+
+The agent reads the skill, standardizes the time axis, and explores the signal
+*numerically* — periodogram for candidate periods, variance-explained to rank
+sources, folding to read the daily shape — with no plot it can see:
+
+![Cold open: the agent reads the skill and begins analyzing the signal](imgs/cold_open.png)
+
+It arrives at a reasoned report of the likely components and their nature — a
+trend, the dominant cycles, sparse spikes — and closes not with a verdict but
+with an offer: build an interactive [marimo](https://marimo.io/) notebook so the
+user can classify the knobs by feel. The user takes it:
+
+![Cold close: the agent reports likely components and offers to build a marimo notebook](imgs/cold_close.png)
+
+No model was specified up front. The agent used the skill's substrate,
+diagnostics, and tuning hierarchy to *formulate* one from the data and hand back
+a specification — which is the thing a package alone does not give you.
+
 ## Install
 
 ```bash

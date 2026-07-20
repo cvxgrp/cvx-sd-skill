@@ -13,6 +13,9 @@ __pycache__/
 
 # Generated artifacts from examples/scripts (plots, animations, reports)
 *.png
+# ...except images intentionally committed for the README / docs
+!imgs/
+!imgs/*.png
 *.mp4
 *.gif
 
