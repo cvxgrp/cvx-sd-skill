@@ -1,7 +1,7 @@
 [project]
-name = "cvx-sd-skill"
+name = "signaldecomp"
 version = "0.1.0"
-description = "Convex signal decomposition for scalar time series (CVXPY)"
+description = "Convex signal decomposition for scalar time series, built on cvxpy"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
