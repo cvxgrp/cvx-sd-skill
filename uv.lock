@@ -190,39 +190,6 @@ wheels = [
 ]
 
 [[package]]
-name = "cvx-sd-skill"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "cvxpy" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "scipy" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-examples = [
-    { name = "marimo" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cvxpy", specifier = ">=1.9.2" },
-    { name = "matplotlib", specifier = ">=3.11.0" },
-    { name = "numpy", specifier = ">=2.5.1" },
-    { name = "pandas", specifier = ">=3.0.3" },
-    { name = "scipy", specifier = ">=1.18.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
-examples = [{ name = "marimo", specifier = ">=0.23.14" }]
-
-[[package]]
 name = "cvxpy"
 version = "1.9.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1196,6 +1163,39 @@ sdist = { url = "https://files.pythonhosted.org/packages/34/26/f5d29e25ffdb535af
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
 ]
+
+[[package]]
+name = "signaldecomp"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "cvxpy" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scipy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+examples = [
+    { name = "marimo" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cvxpy", specifier = ">=1.9.2" },
+    { name = "matplotlib", specifier = ">=3.11.0" },
+    { name = "numpy", specifier = ">=2.5.1" },
+    { name = "pandas", specifier = ">=3.0.3" },
+    { name = "scipy", specifier = ">=1.18.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+examples = [{ name = "marimo", specifier = ">=0.23.14" }]
 
 [[package]]
 name = "six"

@@ -65,7 +65,7 @@ def period_samples(physical_period_seconds: float, delta_seconds: float) -> floa
 
 def multiperiodic(
     periods: float | Sequence[float],
-    num_harmonics: int = 6,
+    num_harmonics: int | Sequence[int] = 6,
     weight: float = 1e-1,
     role: str = "periodic",
 ) -> Component:
@@ -82,8 +82,9 @@ def multiperiodic(
     periods : float or sequence of float
         Period length(s) in **samples** (use :func:`period_samples` to convert
         from physical time). Pass several for multi-scale seasonality.
-    num_harmonics : int
-        Number of harmonic pairs per period.
+    num_harmonics : int or sequence of int
+        Number of harmonic pairs per period. Accepts a scalar (all periods) or 
+        one-per-period list; length must match periods.
     weight : float
         Regularization weight on the Fourier coefficients (baked into the
         regularization matrix from :mod:`signaldecomp.basis`).
@@ -96,6 +97,19 @@ def multiperiodic(
         With ``aux`` exposing the coefficient vector under ``"<role>_theta"``.
     """
     period_list = [float(periods)] if np.isscalar(periods) else [float(p) for p in periods]
+
+    # Validate a per-period harmonic list up front. basis.initialize_arrays would
+    # catch a mismatch later (at build time), but checking here fails earlier and
+    # with a periodic-specific message. A scalar (or length-1) applies to all
+    # periods; otherwise there must be exactly one count per period.
+    if not np.isscalar(num_harmonics):
+        n_h = len(num_harmonics)
+        if n_h not in (1, len(period_list)):
+            raise ValueError(
+                f"num_harmonics must be a scalar or one value per period "
+                f"(got {n_h} harmonic counts for {len(period_list)} period(s))."
+            )
+
     comp = Component(role=role, build=None)
 
     def build(T: int):
