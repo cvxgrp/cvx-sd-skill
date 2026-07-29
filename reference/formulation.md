@@ -1,9 +1,7 @@
 # Formulation: the substrate
 
-This is the layer beneath the component catalog: what a signal decomposition
-*is* as a convex program, what a component *is*, and why DCP is the check that
-lets you generate new ones safely. Read it once; the rest of the skill assumes
-it.
+This is the layer beneath the component catalog: the decomposition, the mask,
+the component cost, and the DCP check that makes composition safe.
 
 ## The decomposition
 
@@ -12,34 +10,23 @@ components:
 
     y = x0 + x1 + ... + xK
 
-`y` is a 1-D signal on a regular grid and **may have missing values**. The
-components are the unknowns we solve for, and they are **real-valued
-everywhere** — no gaps. That asymmetry is the whole engine of imputation: where
-`y` is missing, the summed components still take a value, and that value *is*
-the model's estimate of the missing datum.
+`y` is a 1-D signal on a regular grid and may contain missing values. The
+components are real-valued on the whole grid, so their sum estimates `y` even
+where it is missing.
 
-**x0 is always the data-fidelity term** (the residual). Its cost is the
-data-fidelity loss — mean-square by default, or a robust variant — selected
-with `make_problem(..., residual_loss=...)`. Everything else (`x1 ... xK`) is a
-structural component you append. Because the fidelity term occupies the fixed
-first slot, adding or removing structural components never renumbers anything;
-downstream code addresses components by **role** (`"trend"`, `"seasonal"`),
-never by index. The residual is always keyed `"residual"` in the solved output.
+**x0 is always the data-fidelity term** (the residual), with its loss selected
+through `make_problem(..., residual_loss=...)`. Append structural components as
+`x1 ... xK`; read solved components by role (`"trend"`, `"seasonal"`), never by
+index. The residual is keyed `"residual"`.
 
 ## The mask: missing data as a linear operator
 
-Let `M` be the **mask operator** — the linear map that selects the observed
-entries of a signal and drops the missing ones. Missing data is handled by
-applying `M` to the *consistency constraint*:
+Let `M` select the observed entries. Apply it to the consistency constraint:
 
     M y = M (x0 + x1 + ... + xK)
 
-i.e. the components must sum to `y` **at the known entries only**. At missing
-entries there is no constraint, so the components are free to take whatever
-value their costs prefer — which is exactly the imputed estimate.
-
-`M` is a genuine, well-defined linear operator, not a special case bolted on.
-This is why one mechanism covers three things that look different but are not:
+i.e. require the components to sum to `y` only where `y` is known. One mechanism
+therefore handles:
 
 - **missing data** — entries absent in the raw signal;
 - **held-out validation** — known entries you *pretend* are missing, then score
@@ -47,18 +34,15 @@ This is why one mechanism covers three things that look different but are not:
 - **unobserved grid points** — the model is defined on every grid point even
   where you never had data.
 
-All three are just "not in `M`."
+All three mean “not in `M`.” In CVXPY, implement `M` with boolean indexing:
 
-**In CVXPY, the mask is boolean indexing.** With `mask = ~np.isnan(y)` (`True`
-at observed entries), the consistency constraint is imposed only there by
-indexing the summed expression with the boolean array:
+```python
+mask = ~np.isnan(y)
+constraints.append(y[mask] == total[mask])
+```
 
-    constraints.append(y[mask] == total[mask])
-
-Indexing a CVXPY expression with a NumPy boolean array selects those rows, so the
-boolean index *implements* `M` without ever materializing the selector matrix. The built
-problem returns this array as `built["mask"]`, and a hand-written masked term
-uses the same idiom.
+`make_problem` returns the boolean array as `built["mask"]`; no selector matrix
+is materialized.
 
 ## What a component is
 
@@ -66,98 +50,61 @@ Each component `k` has a cost function
 
     phi_k(x) = ell_k(x) + I_k(x)
 
-a **penalty** `ell_k` (a convex function — small where the component is
-plausible) plus an **indicator** `I_k` (zero on a feasible set, `+infinity`
-off it — i.e. a hard constraint). A component may use one, the other, or both:
-a smooth trend is a pure penalty; a nonnegativity component is a pure
-indicator; the soiling example below uses both.
+a penalty `ell_k`—small where the component is plausible—plus an indicator
+`I_k`, which is zero on a feasible set and `+infinity` outside it. A component
+may use either or both: smoothness is a penalty; nonnegativity is an indicator.
 
 This maps exactly onto the code. A `Component` carries a `build` callable:
 
     build(T) -> (expr, loss, constraints)
 
-- `expr` is the component's CVXPY variable/expression (the `x`),
-- `loss` is `ell_k` (a scalar CVXPY expression, or 0),
-- `constraints` is `I_k` (a list of CVXPY constraints, possibly empty).
+- `expr`: the component's CVXPY variable or expression;
+- `loss`: `ell_k`, a scalar CVXPY expression or zero;
+- `constraints`: `I_k`, a possibly empty list of CVXPY constraints.
 
-A catalog builder like `smooth_trend(...)` *returns* a `Component`; a
-hand-written `build` produces the identical object. They are the same thing —
-the catalog is a set of worked `build` functions, not a privileged mechanism.
-`bounded(inner, ...)` and `nonneg(inner)` are wrappers: they take a component
-and add an indicator to it.
-
-For x0, `ell_0` is the data-fidelity loss and `I_0` is empty (the residual is
-unconstrained — full domain).
+A catalog builder and a hand-written `build` produce the same `Component`
+interface. Wrappers such as `bounded` and `nonneg` add indicators without
+changing the inner penalty. For x0, `ell_0` is the data-fidelity loss and
+`I_0` is empty.
 
 ## Loss as (often improper) prior
 
-The penalty `phi_k` encodes a **prior belief** about the component's structure:
-smaller cost = more plausible. This is a useful and largely correct intuition —
-an `l2` penalty corresponds to a Gaussian belief, `l1` to a Laplace one, an
-indicator to a hard prior — and it is what lets you translate "I believe the
-trend is smooth" directly into a cost.
-
-But be honest about the correspondence: **many of the most useful component
-classes are improper priors** in the strict Bayesian sense — the implied
-density does not integrate to a finite value, so it is not a normalizable
-distribution at all. The workhorse mean-square-small-of-the-first-difference
-(the smooth-trend penalty) is exactly this: its "density" has a divergent
-integral, no proper Bayesian reading, and yet it is one of the most valuable
-priors in practice. So: treat "loss ≈ prior" as the right *intuition* for
-choosing a cost, not as a claim that every model is a literal Bayesian
-posterior. An improper prior is a *direction* to steer in (penalize roughness),
-not a fully specified distribution — which is the point.
+A component cost encodes a prior belief: smaller cost means more plausible.
+L2 suggests a Gaussian belief, L1 a Laplace belief, and an indicator a hard
+prior. Use this as a formulation intuition, not a claim that every objective is
+a literal Bayesian posterior. Difference penalties commonly imply improper,
+non-normalizable priors while remaining useful directions such as “prefer less
+roughness.”
 
 ## DCP is the verifiable target
 
-Every decomposition is a convex program, and it must be **DCP** — disciplined
-convex programming, the rule system CVXPY uses to certify convexity by
-construction. This is what makes *generating* components safe: you do not have
-to prove your composed cost is convex by hand, you construct it from DCP-valid
-atoms and let CVXPY check.
+Every decomposition must satisfy **DCP**, the rule system CVXPY uses to certify
+convexity by construction. Compose from DCP-valid atoms and let CVXPY check:
 
     out = solve(built, verify_dcp=True)   # the default
 
-`solve` verifies DCP before handing the problem to the solver, and refuses a
-non-convex model rather than returning a meaningless "solution." The discipline
-is therefore:
+`solve` refuses a non-DCP model before calling the solver. The discipline is:
 
 1. **construct** the component from CVXPY atoms;
 2. **verify** — let `problem.is_dcp()` / `verify_dcp` confirm convexity;
-3. **trust** the solve.
+3. **solve** only after verification.
 
-**You can verify pieces in isolation, not just the whole problem.** Every CVXPY
-`Expression` carries a curvature and a sign, and `is_dcp()` is defined on
-expressions, constraints, and objectives — not only on the assembled problem. So
-you can check a component's cost *before* it goes into `make_problem`:
+Check a component before adding it to the full problem:
 
     loss = w_d * cp.norm(cp.neg(cp.diff(x)), 2) + w_v * cp.norm1(x)
-    loss.curvature      # 'CONVEX'   (also 'AFFINE', 'CONCAVE', 'CONSTANT', 'UNKNOWN')
+    loss.curvature      # 'CONVEX'
     loss.sign           # 'NONNEGATIVE'
     loss.is_convex()    # True
     loss.is_dcp()       # True
     (x <= 0).is_dcp()   # True  -- constraints check too
 
-For a valid penalty you want the `loss` to be `convex` (an objective is
-`Minimize(convex)`); the component's `expr` itself is typically `affine` (a bare
-variable). This lets you localise a DCP failure to the offending term instead of
-getting one opaque rejection from the whole model.
-
-Two things to know about the analysis. It is **sound but conservative**: a
-"correct" curvature is always right, but it can decline to certify something that
-is convex in truth if it is not written in a DCP-composable form. The classic
-case is `cp.sqrt(1 + cp.square(x))` — genuinely convex, but not certified (CVXPY
-1.9.2 labels it `QUASICONVEX`, `is_dcp() == False`); rewritten as
-`cp.norm(cp.hstack([1, x]), 2)` it certifies as `CONVEX`. When a term you believe
-is convex won't verify, the fix is usually to re-express it, not to abandon it.
-And curvature nests: constant is affine, and affine is both convex and concave.
-
-Never reason your way to "this must be convex" and ship it. Construct it and
-check. For the per-atom rules (which atoms are convex/concave, how curvature and
-monotonicity compose — e.g. whether `cp.log(x)` is usable where you want it),
-defer to the CVXPY documentation at cvxpy.org; this skill does not restate them.
-The default solver is `"CLARABEL"` (open-source); it is always overridable via
-`solve(..., solver=...)`.
+The loss must be convex and the component expression is normally affine.
+Piecewise checks localize failures. DCP analysis is sound but conservative: it
+may reject a convex expression written in a form its rules cannot certify. For
+example, rewrite `cp.sqrt(1 + cp.square(x))` as
+`cp.norm(cp.hstack([1, x]), 2)`. If a known-convex term fails DCP, first seek an
+equivalent DCP form; never bypass verification. Defer per-atom composition rules
+to the CVXPY documentation.
 
 ## Composing a bespoke component: a worked example
 
@@ -185,21 +132,13 @@ Reading the pieces as `ell + I`:
 - `[x <= 0]` — the indicator `I`: the signal is a loss relative to baseline, so
   it is constrained non-positive.
 
-This is DCP-valid (verify, don't assert). **Tune it as a sequence:** first set
-`w_v` to the smallest value that keeps the level returning to zero after each
-recovery (~1e-4 here — too small and it walks off, too large and it flattens the
-trough), then tune `w_d`, the group-lasso drift penalty, for a coherent gradual
-decline (~1e-2 here; insensitive across an order of magnitude — it is the
-smoothness knob once the pin is set). With coherent weights it recovers the
-sawtooth: slow penalized declines, sharp free recoveries to zero.
+Verify DCP, then tune in sequence: set `w_v` to the smallest value that returns
+the level to zero after each recovery (~`1e-4` in the worked case), then tune
+`w_d` for a coherent gradual decline (~`1e-2`). These scales are illustrative,
+not defaults.
 
-**These composed costs are tuning-sensitive, and they fail silently.** Too heavy
-a pin (`w_v`) flattens the component; too heavy a drift penalty (`w_d`) erases
-the soiling — and *both degenerate fits still return `optimal` and pass DCP*.
-Nothing in the solver status tells you the component is wrong. You judge it by
-**looking at the recovered component** (does it show the sawtooth?), not by a
-fit score — a structural (Tier-3) quantity in the sense of
+Bad tuning still returns `optimal`: too much pinning flattens the trough, while
+too much drift penalty erases it. Judge the recovered component, not solver
+status or fit score alone. This is a structural choice in the sense of
 [model-specification.md](model-specification.md). See
-[component-catalog.md](component-catalog.md) for the catalog of ready-made
-`ell`/`I` patterns, and the note on which convex relaxations stand in for the
-non-convex classes this skill excludes.
+[component-catalog.md](component-catalog.md) for ready-made `ell + I` patterns.
