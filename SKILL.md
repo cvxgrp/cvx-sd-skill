@@ -24,6 +24,18 @@ before translating a new domain. Locate an installed copy with
 `python -c "import signaldecomp; print(signaldecomp.__file__)"`; in this repo,
 the source is `src/signaldecomp/`.
 
+## Worked examples
+
+Read the example closest to the task:
+
+- [`examples/pvdaq4_degradation.py`](examples/pvdaq4_degradation.py) — daily
+  normalized PV energy; separates the domain-specific normalization and
+  degradation-rate extraction from the general SD model.
+- [`examples/gasoline_price_trends.py`](examples/gasoline_price_trends.py) —
+  weekly gasoline prices; compares linear, smooth, PWL, and PWC trend claims
+  using holdout selection, structural complexity, residual inspection, and
+  interactive regularization paths.
+
 ## The substrate
 
 Preserve four invariants:

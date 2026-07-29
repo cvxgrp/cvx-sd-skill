@@ -17,7 +17,7 @@ percent-per-year DEGRADATION RATE is domain math, kept in a sibling module
 (pv_domain.py). Everything imported from `signaldecomp` is the general
 substrate; everything imported from `pv_domain` is the PV domain layer.
 
-Run:  uv run --group examples marimo edit examples/pvdaq4_degradation.py
+Run:  uv run python -m marimo edit examples/pvdaq4_degradation.py
 """
 
 import marimo

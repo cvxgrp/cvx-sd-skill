@@ -47,7 +47,9 @@ about *what kind* of low-frequency shape:
 - **`smooth_trend(weight, order=2, role="trend")`** — mean-square-smooth trend
   penalizing the `order`-th difference. `order=2` (default) penalizes curvature
   (a smooth, freely-bending trend); `order=1` penalizes slope (damps level
-  changes). Belief: "the trend is smooth." The workhorse.
+  changes). Belief: "the trend is smooth." The workhorse. As `weight` becomes
+  large, the trend approaches the penalty nullspace: affine for `order=2`,
+  constant for `order=1`.
 
   ```python
   loss = weight * cp.sum_squares(cp.diff(x, k=order))  # order=2: penalize curvature
@@ -55,7 +57,9 @@ about *what kind* of low-frequency shape:
 - **`pwl_trend(weight, role="trend")`** — piecewise-linear trend via an **L1**
   penalty on the second difference (L1 trend filtering). Yields a trend that is
   piecewise linear with a *small number of knots* — interpretable, breakpoint-
-  style. Belief: "the trend is mostly straight with a few bends."
+  style. Belief: "the trend is mostly straight with a few bends." As `weight`
+  becomes large, knots disappear and the trend approaches the affine nullspace
+  of the second-difference operator.
 
   ```python
   d = cp.diff(x, k=2)
@@ -66,7 +70,8 @@ about *what kind* of low-frequency shape:
   number of steps — a level-shift / regime / step-change signal. The
   first-difference analogue of `pwl_trend`: `pwl` localizes *slope* changes,
   `pwc` localizes *level* changes. Belief: "the level is constant except for a
-  few shifts."
+  few shifts." As `weight` becomes large, level shifts disappear and the trend
+  approaches the constant nullspace of the first-difference operator.
 
   ```python
   d = cp.diff(x)

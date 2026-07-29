@@ -58,6 +58,23 @@ Expose functional-form choices such as linear versus spline or smooth versus
 piecewise-linear; the data may not settle them without domain judgment. See
 [implementation.md](implementation.md) for DPP and repeated solves.
 
+### Let weight sliders reach the penalty nullspace
+
+For interactive exploration, make a regularization slider's upper range wide
+enough that the user can see the component's high-weight limit. Difference
+penalties have especially legible limits: second-difference smooth and
+piecewise-linear trends approach affine functions, while a first-difference
+piecewise-constant trend approaches a constant. Watching smooth and PWL trends
+approach the same affine limit by different paths is a useful way to understand
+what their finite-weight penalties do.
+
+The asymptote is rarely the interesting solution or a model-selection target.
+Treat it as a teaching and diagnostic reference: it shows what increasing
+stiffness removes, makes the penalty's nullspace visible, and provides a quick
+check that the control and component behave as expected. Initialize the slider
+at the selected weight, but allow enough additional log-scale range to reveal
+the limit.
+
 ## Composing with the marimo skills
 
 Compose three skills, each owning one layer:

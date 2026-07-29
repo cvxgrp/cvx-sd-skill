@@ -92,6 +92,18 @@ a specification — which is the thing a package alone does not give you.
 *This is a simple example, with data generated explicitly to match the
 components in the code base. It is a proof of concept, not a guarantee.*
 
+## Worked examples
+
+- [`examples/pvdaq4_degradation.py`](examples/pvdaq4_degradation.py) studies
+  degradation in daily normalized PV energy while keeping PV-domain
+  preparation and rate extraction outside the general decomposition layer.
+- [`examples/gasoline_price_trends.py`](examples/gasoline_price_trends.py)
+  compares linear, smooth, piecewise-linear, and piecewise-constant trends in
+  weekly gasoline prices using holdout and structural evidence.
+
+Open either marimo notebook from the repository root with
+`uv run python -m marimo edit <path>`.
+
 ## Install
 
 Install the agent skill:
@@ -109,8 +121,9 @@ uv run python -m pytest   # 98 tests
 
 Requires Python ≥ 3.13. Core dependencies: CVXPY, NumPy, SciPy, pandas,
 Matplotlib. Interactive exploration is best done in
-[marimo](https://marimo.io/) (an optional extra: `uv sync --group examples`);
-the core library does not depend on it.
+[marimo](https://marimo.io/). The repository's default uv development
+environment includes marimo, but the published core library does not depend on
+it.
 
 ## Status & milestones
 
