@@ -94,6 +94,14 @@ components in the code base. It is a proof of concept, not a guarantee.*
 
 ## Install
 
+Install the agent skill:
+
+```bash
+npx skills add cvxgrp/cvx-sd-skill
+```
+
+For local library development:
+
 ```bash
 uv sync            # or: pip install -e .
 uv run python -m pytest   # 98 tests
