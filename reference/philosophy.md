@@ -5,10 +5,45 @@ verifiable. A DCP-valid single solve has a global-optimality certificate; it
 can be composed from independently checked components without relying on a
 fragile initialization or hidden search path.
 
-That guarantee does not make the model uniquely correct. Signal decomposition
-is under-specified: several component sets may reconstruct the same data nearly
-equally well. Losses and constraints encode the beliefs that distinguish those
-models, and structural choices still require domain judgment.
+That certificate says the stated problem was solved; it does not say the stated
+model is uniquely right. Several decompositions may reconstruct the same data
+nearly equally well. Losses and constraints encode the beliefs that distinguish
+them, and those beliefs still require domain judgment.
+
+## Under-specify with structure
+
+Convex modeling is sometimes mistaken for specifying every detail in advance.
+Signal decomposition does the opposite. Specify a structural direction—
+smoothness, sparsity, monotonicity, boundedness—not the value of every sample.
+Let the solve determine the remaining detail.
+
+These models routinely contain more component values than observations. That
+underdetermination is useful: the data alone cannot assign variation to trend,
+periodic, sparse, and exogenous terms, while their penalties and constraints
+steer the assignment toward interpretable shapes. Structure guides surplus
+degrees of freedom; it does not eliminate them.
+
+Brittleness comes from specifying more strongly than the evidence supports. An
+oversized weight can flatten a real component, and an unnecessary penalty can
+remove behavior already allowed by a constraint. Both models may remain DCP
+and return `optimal`. Use the weakest structure that expresses the belief, scan
+nearby settings, and inspect the solved components.
+
+## The binding constraint is interaction
+
+Raw variable count is usually not the hard part. Each added component introduces
+hyperparameters that renegotiate the boundary with every other component
+competing for the same signal. A trend and a long-period term can exchange
+low-frequency variation; with more components, those pairwise confounds become
+a web.
+
+Count unresolved interactions, not components. A large model with two
+holdout-tunable weights may be easier to specify than a small model with five
+coupled structural decisions. This is why the workflow builds largest sources
+first and classifies knobs into tiers: Tier 1 freezes insensitive choices, Tier
+3 removes structural choices from reconstruction-based search, and only Tier 2
+remains in the coupled holdout problem. See
+[model-specification.md](model-specification.md).
 
 ## The operating boundary
 
@@ -47,3 +82,17 @@ tractability and the guarantee the application needs—not whether CVXPY can
 express an integer variable. Outside this skill does not necessarily mean
 difficult or approximate: some discrete signal classes have efficient exact
 specialized operators that do not fit the generic CVXPY/DCP substrate.
+
+## Division of responsibility
+
+This skill occupies the modeling layer:
+
+- the user owns domain semantics, acceptable sensitivity, and the meaning of
+  extracted quantities;
+- this skill translates those beliefs into components, specification rules,
+  validation, and reporting;
+- CVXPY and the selected solver own canonicalization and numerical solution.
+
+These are boundaries, not walls. Surface adjacent concerns such as drift,
+re-tuning cadence, or solver availability when they affect the model, but do
+not silently invent the user’s domain policy or production architecture.
