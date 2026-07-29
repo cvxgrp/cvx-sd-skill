@@ -173,6 +173,8 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   parameterized repeated solves, DPP, and solver configuration.
 - [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
   the widget as a specification instrument; composing with the marimo skills.
+- [model-specification.md](reference/model-specification.md) — Tier 1/2/3
+  tuning, coupled-knob reduction, and the implementation handoff.
 - [philosophy.md](reference/philosophy.md) — why convex; under-specification;
   the boundary between convex, convex-sequence, and discrete models.
 
@@ -185,9 +187,6 @@ The references below are not yet written; the links are placeholders.
   confound.
 - [time-axis.md](reference/time-axis.md) — standardizing raw timestamps to
   `(y, index, Δ)`; the heat-map diagnostic.
-- [model-specification.md](reference/model-specification.md) — the Tier 1/2/3
-  tuning hierarchy; which knobs to holdout-tune, set by magnitude, or judge by
-  looking.
 - [downstream.md](reference/downstream.md) — extraction, bootstrap CIs,
   expanding-window stability, reporting, the pandas round-trip.
 - [recontextualization.md](reference/recontextualization.md) — recognizing
