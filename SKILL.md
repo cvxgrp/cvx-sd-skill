@@ -12,58 +12,35 @@ description: >-
 allowed-tools: Read, Write, Edit, Bash(uv run **)
 ---
 
-Convex signal decomposition (cvx-sd) separates a scalar time series into a
-residual plus a few interpretable structural components — a trend, a periodic
-term, sparse spikes, a response to a covariate — by solving one convex problem.
-This applies convex optimization theory and the basic concept that a loss is an
-encoding of prior belief (an ℓ₂ penalty is a Gaussian belief, ℓ₁ a Laplace one,
-a constraint a hard prior); this skill is about formulating decomposition
-consistently, so models compose, extend, and can be generated and checked
-safely — not about a fixed catalog of components. Three things work together:
-**cvxpy** is the base modeling language; **`signaldecomp`** is a scaffold of
-useful decomposition patterns already laid out; and **disciplined convex
-programming (DCP)** is the type system that keeps everything convex — hence
-testable and composable, and safe to generate.
+Convex signal decomposition separates a scalar time series into a residual and
+interpretable structural components by solving one convex problem. Use
+**CVXPY** as the modeling language, **`signaldecomp`** as the scaffold that
+enforces the decomposition invariants, and **disciplined convex programming
+(DCP)** as the check that keeps generated models convex and composable.
 
-That middle layer, `signaldecomp`, is an installed package you build *on*: it
-holds the invariants below by construction (the residual, the mask, Δ-scaled
-periods), and lets components compose uniformly whether they come from its
-catalog or you write them by hand. It is a scaffold, not a menu of canned
-answers — reach for it to get the fiddly details right for free, and spend your
-attention on the belief each component encodes. **Its components are short and
-written to be read**: the source is part of the documentation, and the
-`examples/` are complete worked translations. Read them — that is how the
-patterns become yours to vary, not just call. (Locate the installed source with
-`python -c "import signaldecomp; print(signaldecomp.__file__)"`; in this repo it
-is `src/signaldecomp/`.)
+Build on `signaldecomp`; do not treat its catalog as a fixed menu. Read its
+short component builders before adapting them, and read an `examples/` file
+before translating a new domain. Locate an installed copy with
+`python -c "import signaldecomp; print(signaldecomp.__file__)"`; in this repo,
+the source is `src/signaldecomp/`.
 
 ## The substrate
 
-Every decomposition sits on the same four invariants. `signaldecomp` enforces
-them by construction — so when you build with it, these are guarantees, not
-chores. Understand them anyway: they are what your model *means*, and when you
-hand-write a component or read someone else's code, getting one wrong breaks the
-model in ways the solver won't flag.
+Preserve four invariants:
 
 - **Decomposition.** `y = x0 + x1 + … + xK`. Each component `xk` carries a loss
-  `φk` measuring how implausible that shape is; the decomposition minimizes the
-  total loss. The smaller a component's loss, the more the model believes it.
-- **x0 is always the residual** (mean-square-small, or a robust variant). This
-  is not a convention: the residual is the one term that can be eliminated in
-  closed form, which is exactly what lets structural components be appended —
-  `x1, x2, …` — without renumbering. Downstream code references components by
-  **role** (`"trend"`, `"periodic"`), never by index.
-- **The mask gracefully handles missing data.** The consistency `y = Σ xk` is
-  imposed only on observed entries. Missing data, held-out validation data, and
-  unobserved grid points are the same mechanism — exclusion from the mask — and
-  the summed components impute the rest. Hold out some known entries and score
-  the imputation: that is a simple model selection procedure.
+  `φk`; minimize their sum.
+- **x0 is always the residual.** Append structural components as `x1, x2, …`,
+  but address every solved component by **role**, never by index.
+- **The mask handles missing data.** Impose `y = Σ xk` only at observed entries.
+  Exclude missing, held-out, and unobserved grid points through the same mask;
+  the summed structural components impute them.
 - **Physical time lives in Δ.** `y` is a 1-D vector on a regular grid; a scalar
-  `Δ` ties index space to physical time, in whatever unit the application uses
-  (seconds, days, months). Periods are real numbers in the same unit and are
-  scaled by Δ as late as possible — never hard-coded as integer sample counts.
-  (`time_axis.py` is a convenience for deriving `(y, index, Δ)` from raw
-  sub-daily timestamps; the contract itself is just those three.)
+  `Δ` ties samples to physical time. Express periods in the same unit and
+  convert to samples as late as possible.
+
+Read [formulation.md](reference/formulation.md) before hand-writing components
+or reviewing another implementation.
 
 ## What the skill does
 
@@ -78,8 +55,7 @@ sides, not the components themselves.
 
 ## Which situation are you in
 
-The first move differs completely by context; identify it before formulating
-anything.
+Identify the context before formulating:
 
 - **Exploration** — data on disk, model unknown ("is there a trend?"). Diagnose
   before you commit. **We recommend marimo here**: build a live notebook where
@@ -97,14 +73,11 @@ anything.
   recognizing that is the job. See
   [recontextualization.md](reference/recontextualization.md).
 
-These flow into each other: exploration hands off to implementation; review can
-kick off exploration.
-
 ## Formulate: compose, don't shop
 
 A component's cost is a **sum of convex terms plus a feasible set**, and those
-stack freely. This is the core move — you *compose* a cost that matches the
-belief, you don't pick the nearest catalog entry.
+stack freely. Compose the cost that matches the belief; do not pick the nearest
+catalog entry.
 
 Suppose a component should drift down slowly but recover in sharp jumps back to
 a baseline of zero — soiling that accumulates, then washes off (an inverted
@@ -113,33 +86,18 @@ downward drift, leave recoveries free, pin the baseline.
 
 ```python
 x = cp.Variable(T)
-loss = w_d * cp.norm(cp.neg(cp.diff(x)), 2) + w_v * cp.norm1(x)  # w_v tiny, ~1e-6
+loss = w_d * cp.norm(cp.neg(cp.diff(x)), 2) + w_v * cp.norm1(x)
 cons = [x <= 0]
 ```
 
-An L2 (group-lasso) penalty on the *negative* first differences costs the slow
-decline; upward steps are unpenalized, so washes snap back freely; a whisper of
-L1 pins the level at zero without shaping the fit.
+The first term penalizes downward drift while leaving recoveries free; the
+second pins the baseline; the constraint keeps the component non-positive.
+Read [formulation.md](reference/formulation.md) for the worked treatment and
+[component-catalog.md](reference/component-catalog.md) for reusable patterns.
 
-**Reach for `signaldecomp`** when a component *is* a catalog entry — it's tested
-and correct on the fiddly details (masked linking, dropped DC column, Δ-scaled
-periods). But the entries are worked patterns, not a fence: a `pwl_trend` *is*
-`weight * norm1(diff(x, k=2))` — and you can confirm that in about ten seconds
-by reading its builder. **Do that before you adapt one:** read `components.py`
-in the `signaldecomp` source (find it via `signaldecomp.__file__`); each builder
-is a few lines, and seeing them is exactly how you learn to write the variants
-the catalog never anticipated.
-
-**DCP is the check that makes this safe** — compose the pieces, then let CVXPY
-confirm the whole is convex. `solve(..., verify_dcp=True)` (the default) refuses
-a non-convex model rather than returning a meaningless answer. Construct and
-verify; never reason "this must be convex" and ship it.
-
-Composed costs like the sawtooth are *tuning-sensitive*: too heavy a pin
-flattens it, too heavy a drift penalty erases the soiling, and both still solve
-cleanly. You judge them by **looking at the component**, not by a fit score —
-see [formulation.md](reference/formulation.md) for the worked walk-through and
-[model-specification.md](reference/model-specification.md) for why.
+After composing a component, verify DCP. `solve(..., verify_dcp=True)` does this
+by default. A model can be convex and still be badly tuned, so inspect each
+component rather than trusting solver status or fit score alone.
 
 ## The loop, end to end
 
@@ -147,10 +105,9 @@ Build, solve, read components by role. This is the whole cycle — everything el
 is choosing the components and reading the outputs.
 
 ```python
-import numpy as np
 import cvxpy as cp
 from signaldecomp import (
-    make_problem, solve, components_to_frame, plot_decomposition,
+    make_problem, solve, components_to_frame,
     smooth_trend, multiperiodic, period_samples, Component,
     SECONDS_PER_DAY, SECONDS_PER_YEAR,
 )
@@ -179,26 +136,14 @@ built = make_problem(
 out = solve(built)                       # verifies DCP, then solves
 trend = out["values"]["trend"]           # solved arrays, keyed by role
 resid = out["values"]["residual"]        # x0 is always "residual"
-df = components_to_frame(out, y=y)        # labeled DataFrame, gaps imputed
-fig = plot_decomposition(out, y=y)       # signal+fit, per-role, residual panels
+df = components_to_frame(out, y=y)       # labeled DataFrame, gaps imputed
 ```
 
-`solve` returns the built dict plus `status` and `values` — a dict from role to
-the solved array, including `residual` (x0) and any component aux (a trend
-slope, the seasonal coefficients). Components are always addressed by **role**,
-never by index, so adding a component later doesn't renumber anything.
-`components_to_frame` wraps the full-length components onto a pandas index (pass
-`index=` from `standardize_time_axis`), with a `reconstruction` column and the
-imputed values filled in at the gaps; `plot_decomposition` returns a Matplotlib
-figure (marimo-cell-friendly) with a panel for the signal-plus-fit, one per
-structural role, and the signed residual.
-
-The `components` list is the seam: a catalog builder and a hand-written
-`Component` sit in it side by side and go through the same solve — the two paths
-from "compose, don't shop" plug into one loop. For a full worked translation in
-a real domain — the two moves applied end to end, not just the mechanics — read
-an `examples/` file before building in a new domain of your own; it is faster
-than reconstructing the judgment from scratch.
+`solve` adds `status` and `values` to the built dictionary. `values` contains
+the residual, each component keyed by role, and component auxiliary values.
+`components_to_frame` adds the reconstruction and can restore a pandas index.
+Catalog builders and hand-written `Component` objects share the same
+`components` list and solve path.
 
 ## Footguns
 
@@ -206,24 +151,15 @@ These fail *silently* — the solve still returns `optimal`, the model still loo
 fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
 
 - **Scale periods by Δ.** A period is a physical duration, not an integer
-  sample count. Express periods and Δ in the *same* unit (whatever the
-  application uses) and convert with `period_samples`; hard-coding a period as a
-  sample count silently mis-tunes it and breaks on leap years / irregular Δ.
+  sample count. Express periods and Δ in the same unit and convert with
+  `period_samples`.
 - **A fixed-step grid can't represent DST.** If you build Δ from timestamps,
-  supply local *standard* time (no daylight-saving shifts) — a fixed-duration
-  grid has no 23h/25h days, so DST-shifted stamps produce spurious gaps.
-  (Computing Δ from timestamps yourself? Use `Timedelta.total_seconds()`, never
-  `.seconds`, which wraps at 24h.)
-- **Don't holdout-tune a structural (Tier-3) knob, or a knob on a component
-  that barely moves the reconstruction.** Holdout scores imputation of the
-  *reconstruction*: a knob that changes a component's *shape* but not the fit (a
-  breakpoint weight), or one on a low-contribution component, has an "optimum"
-  that is noise or the wrong objective. Judge those by **looking at the
-  component**. See [model-specification.md](reference/model-specification.md).
-- **Confidence intervals are a final-model step.** Never bootstrap inside a
-  tuning loop or before the model is specified — it conflates parameter
-  uncertainty with tuning variation and wastes the expensive resampling on
-  models you'll discard.
+  supply local standard time without daylight-saving shifts. When computing Δ,
+  use `Timedelta.total_seconds()`, never `.seconds`.
+- **Do not holdout-tune a structural knob.** If a knob changes component shape
+  without moving the reconstruction, judge the component by looking.
+- **Bootstrap only the final model.** Do not mix tuning variation with
+  final-model uncertainty.
 
 ## Reference
 
@@ -231,6 +167,8 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   masked linking, DCP as the verifiable target, composing bespoke components.
 - [component-catalog.md](reference/component-catalog.md) — convex component
   vocabulary; excluded non-convex classes and their relaxations.
+- [diagnostics.md](reference/diagnostics.md) — numerical inspection:
+  periodograms, folds, variance explained, residual and driver checks.
 - [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
   the widget as a specification instrument; composing with the marimo skills.
 
@@ -243,9 +181,6 @@ The references below are not yet written; the links are placeholders.
   confound.
 - [time-axis.md](reference/time-axis.md) — standardizing raw timestamps to
   `(y, index, Δ)`; the heat-map diagnostic.
-- [diagnostics.md](reference/diagnostics.md) — general, register-independent
-  data & fit diagnostics: periodogram→periods, variance-explained ranking,
-  fold-and-check, residual- and component-vs-driver as lead-generators.
 - [model-specification.md](reference/model-specification.md) — the Tier 1/2/3
   tuning hierarchy; which knobs to holdout-tune, set by magnitude, or judge by
   looking.
