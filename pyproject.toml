@@ -26,5 +26,8 @@ examples = [
     "marimo>=0.23.14",
 ]
 
+[tool.uv]
+default-groups = ["dev", "examples"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
