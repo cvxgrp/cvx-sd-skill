@@ -169,8 +169,12 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   vocabulary; excluded non-convex classes and their relaxations.
 - [diagnostics.md](reference/diagnostics.md) — numerical inspection:
   periodograms, folds, variance explained, residual and driver checks.
+- [implementation.md](reference/implementation.md) — reproducible builds,
+  parameterized repeated solves, DPP, and solver configuration.
 - [marimo.md](reference/marimo.md) — exploration as tier-classification by feel;
   the widget as a specification instrument; composing with the marimo skills.
+- [philosophy.md](reference/philosophy.md) — why convex; under-specification;
+  the boundary between convex, convex-sequence, and discrete models.
 
 ### Planned
 
@@ -184,12 +188,8 @@ The references below are not yet written; the links are placeholders.
 - [model-specification.md](reference/model-specification.md) — the Tier 1/2/3
   tuning hierarchy; which knobs to holdout-tune, set by magnitude, or judge by
   looking.
-- [implementation.md](reference/implementation.md) — spec→production;
-  tune-then-solve, runtime tuning, DPP-accelerated scans, CI at the end.
 - [downstream.md](reference/downstream.md) — extraction, bootstrap CIs,
   expanding-window stability, reporting, the pandas round-trip.
 - [recontextualization.md](reference/recontextualization.md) — recognizing
   latent convex decompositions in classical / hand-rolled code.
-- [philosophy.md](reference/philosophy.md) — why convex, under-specification,
-  the operating band, the broader line of work.
 - [gotchas.md](reference/gotchas.md) — the fuller footgun list.
