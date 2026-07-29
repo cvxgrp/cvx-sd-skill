@@ -1,17 +1,8 @@
 # Working in this repository
 
-Guidance for AI agents (and humans) contributing to `cvx-sd-skill`.
-
-## What this repo is
-
-Two artifacts that work together:
-- **`signaldecomp`** (in `src/`) — a small, tested convex signal-decomposition
-  library built on CVXPY.
-- **The skill** — `SKILL.md` (the agent entry point) plus `reference/` deep-dive
-  docs, teaching a model to *formulate* decompositions well.
-
-Note the split names: the **import package is `signaldecomp`**; the **project /
-repo is `cvx-sd-skill`**. `import signaldecomp`, not `import cvx_sd_skill`.
+This repository contains the `signaldecomp` Python library and an agent skill
+(`SKILL.md` plus `reference/`). The project is `cvx-sd-skill`, but the import is
+`signaldecomp`.
 
 ## Running tests
 
@@ -21,68 +12,84 @@ Use the module form — the bare `pytest` console script may not be on PATH:
 uv run python -m pytest -q
 ```
 
-`uv sync --group dev` first if pytest is missing. The suite should stay green
-(currently 97 tests); add tests when you add or change a contract.
+Run `uv sync --group dev` first if pytest is missing. Add tests when changing a
+contract.
 
 ## The cardinal discipline: verify, don't assert
 
-Every code snippet in `SKILL.md` and `reference/` is **run against the library
-before commit** — signatures, defaults, aux-key names, and DCP validity are
-checked, not remembered. When editing docs:
+Run every code snippet in `SKILL.md` and `reference/` against the library before
+commit:
 
 - Confirm builder signatures/defaults from the source, not from memory.
-- Confirm any CVXPY expression is DCP with `expr.is_dcp()` / `.is_convex()` /
-  `.curvature` (curvature is checkable per-expression, not just per-problem).
-- If you claim a recipe "works" (e.g. a convex-sequence heuristic), run it and
-  confirm the stated behavior before it goes in a doc.
+- Verify CVXPY expressions with `is_dcp()`, `is_convex()`, and `curvature`.
+- Run claimed recipes and confirm the documented behavior.
 
-This is the same discipline the skill teaches its users: construct, verify, then
-trust.
-
-- **Read the scaffold, don't just call it.** Before adapting a component, `Read`
-  its builder in the `signaldecomp` source (`components.py`; find the install
-  with `signaldecomp.__file__`) — they are a few lines each, and the source *is*
-  the pattern documentation. Before building in a new problem domain, read the
-  nearest `examples/` file. The package is written to be read; treating it as an
-  opaque API throws away most of what it teaches.
+Read the relevant builder before adapting a component and the nearest example
+before translating a new domain. The short source is pattern documentation, not
+an opaque implementation.
 
 ## Package conventions
 
-- A component is a `Component(role, build)` where
-  `build(T) -> (expr, loss, constraints)`; catalog builders and hand-written
-  components are the same object. See `reference/formulation.md`.
-- x0 is always the residual; structural components are appended and addressed by
-  **role**, never index.
+- A component is `Component(role, build)` with
+  `build(T) -> (expr, loss, constraints)`.
+- x0 is the residual; address structural components by role, never index.
 - The default solver is `"CLARABEL"`; `solve(..., verify_dcp=True)` is the
-  default and refuses non-DCP problems.
-- Missing data is handled by boolean-indexing the consistency equality
-  (`mask = ~np.isnan(y)`); no selector matrix is materialized.
+  default.
+- Missing data uses boolean indexing of the consistency equality.
+- `solve` accepts solver keyword arguments and treats `optimal` and
+  `optimal_inaccurate` as successful. Test contracts with meaningful tolerances,
+  not one solver's exact array.
+
+See `reference/formulation.md` for the full substrate.
+
+## Repeated solves and validation
+
+- Reuse a built problem with `cp.Parameter` only when data, `T`, mask,
+  variables, constraints, and component structure stay fixed. Verify
+  `problem.is_dcp(dpp=True)` before claiming DPP reuse.
+- Holdout, bootstrap, expanding-window analysis, and component-form changes
+  rebuild by design. Their public seam is `build_fn(y) -> built`; do not force
+  them through fixed-problem parameterization.
+- `holdout_select` currently uses one contiguous block. Do not document K-fold
+  or periodic/strided holdout as implemented.
+- `bootstrap_ci` requires an explicit `block_size`; there is no safe
+  domain-independent default. Extract domain quantities through an explicit
+  `extractor(out)`.
+- Repeated-solve code needs deterministic policies for failed candidates, flat
+  score regions, and Tier-3 null results. See `reference/implementation.md`.
 
 ## Practical calibration notes
 
-- **Natural weight scale depends on the penalty class** (not a single number).
-  *Analysis+local* penalties (l1 sparsity: `sparse`, `pwl_trend`) are
-  normalized by `1/T`, so their natural weights are **O(1)** (pwl near-truth
-  ~10-100 on T~300). *Analysis+global* penalties (l2² energy: `smooth_trend`,
-  `monotone_trend` smoothness) and *synthesis* penalties (coefficient-space:
-  `multiperiodic`, `exog_spline`) are **unscaled** — their weights are larger
-  and length-dependent (`smooth_trend` ~1e2-1e3+). See
-  `reference/formulation.md`'s synthesis/analysis split for why.
-- **Degeneracy is directional:** a component flattened/collapsed to a line →
-  weight too high → lower it; a component chasing noise (too many knots/spikes)
-  → weight too low → raise it. Judge against the class's natural scale above.
-- **Check whether a bare constraint already gives the behavior before adding a
-  penalty.** E.g. bare `monotone_trend` (weight=0) already steps between levels;
-  it needs no extra sparse term to "allow jumps."
+- Builders make exposed weights approximately commensurable; start on comparable
+  log ranges and expand from observed behavior.
+- A flattened component usually means the weight is too high; noise chasing
+  means it is too low.
+- Check whether a bare constraint already gives the behavior before adding a
+  penalty.
+- Tier comes from fitted effect, not penalty class.
 
-## Repo layout & private notes
+See `reference/model-specification.md` for tuning and
+`reference/component-catalog.md` for normalization.
 
-- `src/signaldecomp/` — the library (src-layout, editable install).
-- `SKILL.md`, `reference/` — the skill prose.
-- `examples/` — worked examples (PV degradation; more planned).
-- `tests/` — pytest suite.
-- `memories/` and `plans/` are **git-ignored working notes** (local only); do not
-  rely on them being present, and do not add public-facing content there.
+## Documentation state
+
+Keep workflow and routing in concise `SKILL.md`; put theory, lookup material,
+and worked decisions in one canonical reference. Use the `SKILL.md` index as the
+source of truth for written and planned references.
+
+For marimo examples, validate the notebook graph with:
+
+```bash
+uv run --group examples marimo check examples/<notebook>.py
+```
+
+`marimo check` verifies cell ownership and dataflow, not runtime results; run
+important numeric paths in a live kernel as well.
+
+## Private notes
+
+`memories/` and `plans/` are git-ignored local notes. Do not rely on them being
+present or place public-facing content there.
 
 ## License
 

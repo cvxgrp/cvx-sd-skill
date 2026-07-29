@@ -1,17 +1,13 @@
 # Exploration in marimo
 
-This is the deep-dive for the **exploration** context (see the situation router
-in [SKILL.md](../SKILL.md)): data on disk, model not yet decided. The job here
-is not to pick the model a priori — it is to make **judgment-by-looking** fast
-and legible, and hand off a *specification*. marimo is the recommended surface
-for that. Recommend, not depend: the core library stays marimo-free.
+Use marimo in the **exploration** context: data is available, but the model is
+not yet decided. A reactive notebook makes judgment-by-looking fast and leaves
+behind a model specification. The core library remains marimo-free.
 
 ## Why marimo: the slider is a tier classifier
 
-Exploration's real work is **classifying each hyperparameter into a tuning tier
-by feel** — and a reactive widget makes that a matter of sliding-and-looking
-rather than analysis. As you move a weight's slider and watch the decomposition
-respond, the tier reveals itself:
+Use reactive widgets to classify each hyperparameter by how the decomposition
+responds:
 
 - The slider is **numb across an order of magnitude** (nothing visibly changes)
   → **Tier 1**: set by magnitude, fix, forget.
@@ -21,127 +17,70 @@ respond, the tier reveals itself:
   breakpoint jumps) but the **fit score barely notices** → **Tier 3**:
   structural, *judge by looking*, do **not** holdout-tune.
 
-That last case is what the widget is uniquely good at surfacing — a knob that
-reshapes a component without moving the fit has a holdout "optimum" that is noise
-or the wrong objective, and you can only see it is Tier 3 by watching the shape
-while the score sits still. (Full hierarchy:
-[model-specification.md](model-specification.md).)
-
-This classification is the **dimensionality reduction** that makes the coupled
-specification problem tractable: most knobs turn out Tier 1, a few Tier 2, and
-the structural ones you learn to judge by eye. The widget is the **low-judgment
-on-ramp to the tuning hierarchy** — parallel to the package being the
-low-context on-ramp to correctness.
+A Tier-3 knob has no meaningful holdout optimum: it changes the component but
+not the scored reconstruction. Classifying knobs this way reduces a coupled
+tuning problem to a few numeric searches plus explicit structural judgments.
+See [model-specification.md](model-specification.md) for the full hierarchy.
 
 ## Build additively, largest sources of variation first
 
-You don't know a priori which component dominates — determining that *is* part
-of exploration. Look at the data, and work with the user, to identify the
-largest sources of variation, then model them **additively, biggest first**: a
-gross trend or the strongest seasonal cycle before the subtle stuff. Each
-component you add is judged against everything already placed, so its knobs are
-classified against a settled backdrop rather than all at once — which is what
-keeps the coupled tuning problem tractable. The order emerges from the data and
-the conversation; it is not decided up front.
+Use the data and the user’s domain knowledge to identify the largest sources of
+variation, then model them **additively, biggest first**. Classify each new
+component against the components already placed rather than tuning everything
+at once.
 
 **Close the search with a critique, not a verdict.** Before handing off, name
-**at least three things that could be wrong, misspecified, or improvable** —
-candidates *for the user*, not fixes to apply. A component whose form looks a
-little off against its driver, a weight you are unsure of, a period you did not
-test: surfacing these is the skill working (exploration is a dialogue), and it
-respects that the data underdetermines the model — some calls are the user's
-domain prior to make, not the fit's. (Fuller treatment:
-[model-specification.md](model-specification.md).)
+at least three uncertainties or possible improvements for the user to judge:
+for example, an ambiguous functional form, an uncertain weight, or an untested
+period. Do not silently resolve choices the data underdetermines.
 
 ## How the agent inspects data without seeing it
 
-You cannot see a rendered plot — but you are not blind to the data. Exploration
-runs on two channels working together.
+Use two channels together:
 
-**Compute the structure the eye would catch.** Most visual judgments have a
-numerical form the agent *can* read: dominant periods (periodogram), which
-source is largest (nested variance-explained), the daily/periodic shape (fold
-and read the profile), what is still missing (residual inspection), and whether
-each component's *form* is right (component vs. driver). These techniques are
-**register-independent** — they apply to a plain script or a model review just as
-much as to a notebook — so they live in their own reference:
-[**diagnostics.md**](diagnostics.md). Read it for the toolkit and its traps (the
-sideband/trend-leakage caveats on the periodogram, and the "don't average over a
-modulating period" fold trap). Here we only note their role *in the live
-session*: the numeric channel is what turns "look at the data" into targeted,
-answerable questions.
-
-**Let the user be the visual sensor — and ask the right questions.** The user
-sees the widget; you interpret what they report ("the trend dips in winter,"
-"there's a spike near the end"). The numeric channel *generates the questions*:
-a periodogram peak at ~7 days becomes "do you expect a weekly cycle?" — a
-targeted, data-grounded question, not a vague "what do you see?" That exchange,
-not a silent plot, is the exploration.
+- **Compute what the eye would catch.** Periodograms, nested variance explained,
+  folded profiles, residual inspection, and component-versus-driver checks
+  produce numeric evidence. See [diagnostics.md](diagnostics.md).
+- **Let the user be the visual sensor.** Interpret what they report from the
+  live plots. Turn numeric leads into targeted questions—a seven-day
+  periodogram peak becomes “do you expect a weekly cycle?”—rather than asking
+  vaguely what they see.
 
 ## Widget mapping
 
-- **which structural components are in the model** (append-only) **and what
-  functional form each takes** → dropdowns / radio buttons. A dropdown fits any
-  discrete choice among alternatives: *which* components, and *which form* a
-  component takes (`exog`: linear vs. spline; `trend`: smooth vs. pwl vs.
-  monotone). Exposing form matters because **the data often can't settle it** —
-  parsimony may favor the simpler form while domain knowledge suggests a richer
-  one, and only the user knows which prior to impose; the dropdown makes that a
-  live choice, not a code edit. Like a component-*set* change, a *form* change is
-  structural → a deliberate rebuild, not an instant slider.
-- **weights** → sliders (log-scale, given the order-of-magnitude story).
-- **DPP tells you which knobs are instant.** A weight on fixed data re-solves
-  fast (same parametrized problem, no rebuild); changing `T` or the component
-  *set* triggers a full re-solve. This aligns with marimo's own reactivity — a
-  weight slider re-runs only its dependent cells — so put the instant knobs on
-  sliders for live feel and treat structural changes as deliberate rebuilds.
-  (See [implementation.md](implementation.md) for DPP.)
+| Choice | Widget and behavior |
+|---|---|
+| Component set or functional form | Dropdown/radio; changing it deliberately rebuilds the model |
+| Numeric weight | Log-scale slider |
+| DPP-compatible parameter | Slider with a fast re-solve of the same parameterized problem |
+
+Expose functional-form choices such as linear versus spline or smooth versus
+piecewise-linear; the data may not settle them without domain judgment. See
+[implementation.md](implementation.md) for DPP and repeated solves.
 
 ## Composing with the marimo skills
 
-You do not teach the agent marimo from scratch — compose three skills, each
-owning one layer:
+Compose three skills, each owning one layer:
 
-- **cvx-sd (this skill)** — what the decomposition *means*: the substrate,
-  invariants, DCP, the tier hierarchy. The domain.
+- **cvx-sd** — the decomposition, DCP, and tuning hierarchy;
 - **[`marimo-team/skills`](https://github.com/marimo-team/skills)**, specifically
-  its **`marimo-notebook`** sub-skill — how to *author* a correct reactive
-  notebook file: cell structure, PEP 723 dependencies, script-mode detection,
-  `marimo check`, the reactivity idioms. The artifact.
+  **`marimo-notebook`** — authoring a correct reactive notebook;
 - **[`marimo-team/marimo-pair`](https://github.com/marimo-team/marimo-pair)** —
-  how to *drive a live session* with the user: run Python in the user's actual
-  kernel, inspect live state, commit durable changes. The session.
-
-These map onto exploration exactly: it is a **live dialogue with the data**
-(`marimo-pair`), building a **durable notebook** (`marimo-notebook`), that
-**decomposes a signal** (cvx-sd).
+  driving the user’s live kernel and committing durable changes.
 
 ### Two intersections that bite decomposition notebooks
 
 Defer to the marimo skills for the mechanics; these are the cvx-sd-specific
 traps worth naming here:
 
-- **A PEP 723 notebook must be opened with `--sandbox`**, or marimo ignores the
-  inline dependencies — including `signaldecomp`. Declare deps in the
-  `# /// script` header (like the `examples/` prep scripts) and launch sandboxed.
+- **Open a PEP 723 notebook with `--sandbox`**, or marimo ignores its inline
+  dependencies, including `signaldecomp`.
 - **During a live session the running kernel is the source of truth — drive it,
-  do not edit the `.py`.** File edits will not reach the kernel and may be
-  overwritten. This is `marimo-pair`'s core rule; the practical consequence for
-  us is that a `built`/`out` object defined in one cell must not be redefined in
-  another (marimo enforces one owning cell per public name), so structure the
-  build/solve/read cells with distinct names and let reactivity re-run them.
-
-### Trying it
-
-Put this skill repo alongside `marimo-pair` and `skills` in a folder with **just
-a data file**, and ask the agent to explore the signal. It should standardize
-the time axis, start a (sandboxed, if PEP 723) marimo session, build an
-append-only notebook with the widgets above, and drive the live kernel so you
-can classify the knobs by feel together.
+  do not edit the `.py`.** File edits do not update the kernel and may be
+  overwritten. Give each public name one owning cell; use distinct names for
+  build, solve, and read stages.
 
 ## Exploration ends in a specification
 
-You leave exploration with a *specified model* — components chosen, knobs
-tier-classified — not just a chart. And ending your recommendation with open
-questions back to the user ("should the weekly cycle be here at all?") is the
-skill *working*, not falling short: the handoff is a spec, not a verdict.
+Leave exploration with the components chosen, knobs tier-classified, unresolved
+questions recorded, and a durable notebook—not just a chart.

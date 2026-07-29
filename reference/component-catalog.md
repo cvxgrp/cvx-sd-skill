@@ -90,7 +90,7 @@ about *what kind* of low-frequency shape:
 localizes change into a few kinks. Reach for `pwl` when you care about *where*
 the trend changes slope.
 
-### Difference-penalty lexicon (the 2x2) and how length-scaling depends on it
+### Difference-penalty lexicon
 
 The trend penalties are all a **norm of a difference of `x`** — an *analysis*
 penalty (sparsity/energy in `L @ x`, here `L = k`-th difference). Two choices,
@@ -101,34 +101,11 @@ norm and difference-order, give a small named vocabulary:
 | **1st diff** `diff(x)` | few *level changes* → **piecewise-constant** (`pwc_trend`) | small total *level variation* → a gently drifting level (`smooth_trend(order=1)`) |
 | **2nd diff** `diff(x,2)` | few *slope changes* → **piecewise-linear** (`pwl_trend`) | small total *curvature* → **smooth** (`smooth_trend`) |
 
-1st-difference forms are the level-analogues of the 2nd-difference trends, and
-both have builders: `pwc_trend` is the L1 case (piecewise-constant — few level
-shifts, a step/segmentation signal), and `smooth_trend(order=1)` is the L2² case
-(a level that resists change). The pattern generalizes to any `k`-th difference,
-but **in practice `k > 2` is essentially never useful** — there is no common belief "few/small *third* derivative," so the
-named cases are `k = 1` (level) and `k = 2` (slope). `smooth_trend`'s `order=`
-is the escape hatch if you ever need another.
-
-**Why the L1 forms get `1/T`-normalized and the L2² forms do not** (this is the
-[loss-normalization](formulation.md) rule made concrete on one operator):
-
-- **L1 of a difference is a LOCAL claim** — "few nonzero differences." It prices
-  the *count / density* of active change-points, a per-entry quantity that grows
-  with how many entries you have. Dividing by the difference length (`1/T`)
-  restores the per-entry meaning, so the weight means the same thing regardless
-  of record length. Hence `sparse` and `pwl_trend` carry the `/dim` factor.
-- **L2² of a difference is a GLOBAL claim** — "small *total* squared variation /
-  curvature." It prices an *aggregate* quantity; the sum itself is the meaning
-  (a discrete stand-in for an integrated roughness like `∫ (x'')²`). Averaging
-  it per-entry would dilute an "overall smoothness" belief into a "per-point"
-  one — not the same belief — and empirically forces absurd weights. Hence
-  `smooth_trend`/`monotone_trend` smoothness are left un-normalized.
-
-So the norm you pick does two things at once: L1 vs L2² selects
-local-sparse vs global-smooth shape, AND determines whether the weight is
-length-scaled. They are the same distinction (local vs global) seen from two
-sides.
-
+The named cases use first differences for level changes and second differences
+for slope changes. L1 expresses a local sparsity claim, so the builders divide
+by the difference length; L2² expresses total global roughness and is not
+length-normalized. This keeps locally sparse weights comparable across record
+lengths without changing the meaning of global smoothness.
 
 ## Multiperiodic (strictly periodic is a special case)
 
@@ -254,91 +231,66 @@ So two of the headline components are instances of this one idea: **`sparse` is
 synthesis with `A = I`; `pwl_trend` is analysis with `L = diff(k=2)`.** That is
 "compose, don't shop" in miniature — pick the `A` or `L` that matches your belief.
 
-Two honest notes. A **bare `l1` on the residual** (`residual_loss="l1"`) is not
-usually the best way to get robustness. The classic, more useful construction is
-a **decomposition**: keep the default `l2` (`sum_squares`) residual for the
-Gaussian bulk and append a **`sparse` component** for the few large outliers —
-`sum_squares(residual) + w * cp.norm1(x_sparse)`, two terms on two variables. The
-residual takes the bulk; the sparse component takes the spikes. (Similar gestalt
-to elastic net, but *not* elastic net — elastic net puts both penalties on one
-variable; here they are on two.) Either sparse form can be **sharpened toward
-true L0** by reweighting the `l1(...)` (IRL1, below).
+A bare L1 residual is not always the most informative robust model. To separate
+Gaussian noise from isolated outliers, keep the default L2 residual and append
+a `sparse` component: `sum_squares(residual) + w * norm1(x_sparse)`.
 
-## Beyond convex: sequences of convex solves
+### Escalating from L1 to IRL1
 
-This skill is convex-only, and a single convex solve is *globally optimal* by
-construction — that is the guarantee that makes generation safe. Some tempting
-structures are genuinely non-convex and cannot be one such solve. But many are
-still approachable as a **sequence of convex solves**: you lift the hard problem
-into repeated convex problems, each exact, using the previous solution to guide
-the next.
+Start with plain L1 when the belief is “few nonzeros.” Escalate to
+**iteratively reweighted L1 (IRL1)** when the fitted component has too many
+small nonzeros or L1 shrinkage biases the important ones toward zero. The
+second effect matters when amplitudes carry meaning: for a piecewise-constant
+component, shrinkage can distort the estimated level changes even when their
+locations are correct.
 
-These sequence methods are **local search heuristics: they often work quite well
-in practice, and while global optimality cannot be guaranteed, useful solutions
-are common.** That is the honest trade — you give up the single-solve certificate
-for reach, and you judge the result by *looking*, not by a guarantee.
+IRL1 re-solves with entrywise weights `1 / (abs(previous) + eps)`. Small entries
+become more expensive while large entries are penalized less:
 
-**Genuinely out of scope** (no good in-scope convex-sequence heuristic; see the
-operating band in [philosophy.md](philosophy.md)):
+```python
+weight = 1.0
+w = np.ones(T - 1)
+for _ in range(3):
+    x = cp.Variable(T)
+    d = cp.diff(x)
+    loss = weight / d.shape[0] * cp.norm1(cp.multiply(w, d))
+    # ... solve with this component ...
+    w = 1.0 / (np.abs(np.diff(x.value)) + 1e-3)
+```
 
-- **Markov / regime-switching states** with discrete transition dynamics.
-- anything requiring a *proven* global integer optimum (that is mixed-integer
-  programming, a different tool).
+Start from a loose L1 fit; an overly tight first pass may erase real structure
+before reweighting can preserve it. Two or three passes are usually enough to
+see whether sparsity, amplitudes, and locations stabilize. Each pass is convex,
+but the sequence is a local-search heuristic. See
+[implementation.md](implementation.md) for efficient repeated solves.
 
-**Approachable as a convex sequence:**
+## Discrete-valued structure
 
-- **near-L0 / "a few nonzeros," sharper than plain L1** → **iteratively
-  reweighted L1 (IRL1)**. Plain L1 (the `sparse` / `pwl_trend` patterns above, see
-  [Sparsity](#sparsity-a-pattern-not-a-single-component)) is a biased L0 surrogate;
-  IRL1 sharpens it. Solve, then re-solve with per-entry weights `1/(|prev| + eps)`,
-  2–3 times. Each pass drives already-small entries toward zero and frees large
-  ones from shrinkage.
+Raise the modeling choice early when the user describes Boolean, integer, or
+finite-set states. CVXPY supports Boolean and integer variables and can
+formulate mixed-integer convex programs for compatible solvers. The question is
+not whether exact discrete modeling exists; it is whether it remains tractable
+at the required horizon and number of discrete variables.
 
-  ```python
-  weight = 1.0                             # start LOOSE (local scale ~1-3); see note below
-  w = np.ones(T - 2)
-  for _ in range(3):                       # 2-3 iterations ~ L0
-      x = cp.Variable(T)
-      d = cp.diff(x, k=2)
-      loss = weight / d.shape[0] * cp.norm1(cp.multiply(w, d))
-      # ... solve with this component ...
-      w = 1.0 / (np.abs(np.diff(x.value, n=2)) + 1e-3)
-  ```
+When an exact mixed-integer solve is too costly, **relax-round-polish** is a
+useful heuristic: relax the discrete set to its convex hull, solve, round to a
+feasible value, then fix the rounded values and re-solve the remaining
+continuous variables.
 
-  The important, counter-intuitive detail: **start from a *loose* (low-weight)
-  L1 fit and let the reweighting concentrate it.** A loose plain-L1 pass is
-  overcomplete (many small knots); reweighting then drives the spurious ones to
-  zero and keeps the real ones, converging to the true breakpoint count in 2–3
-  iterations. Starting from a *tight* (high-weight) fit instead collapses the
-  component toward a straight line and loses real structure. Weight scale is
-  per **penalty class**: l1-sparsity penalties like this one are 1/T-normalized,
-  so their natural weights are **O(1)** (start ~1-3); l2²-smoothness weights are
-  unscaled and larger. See [formulation.md](formulation.md).
+```python
+b = cp.Variable(T)
+theta = cp.Variable(A.shape[1])
+relaxed = cp.Problem(
+    cp.Minimize(cp.sum_squares(A @ theta + b - y)),
+    [b >= 0, b <= 1],
+)
+relaxed.solve()
+b_fixed = np.rint(b.value)
+cp.Problem(cp.Minimize(cp.sum_squares(A @ theta + b_fixed - y))).solve()
+```
 
-  IRL1 is the canonical "second problem uses the first's output" pattern, and it
-  is DPP-friendly (only the weights change between solves). Fuller treatment,
-  including the fast re-solve, is in [implementation.md](implementation.md).
-- **Boolean / finite-set values** → **relax-round-polish**. Relax the discrete
-  set `{0, 1}` to its convex hull `[0, 1]`, solve, round to the nearest feasible
-  point, then *fix* the rounded values and re-solve any remaining free variables
-  (the "polish"). Same class as IRL1 — a non-convex problem lifted into a short
-  sequence of convex solves.
-
-  ```python
-  # relax: b in [0, 1] instead of {0, 1}
-  b = cp.Variable(T)
-  solve_problem_with(b, constraints=[b >= 0, b <= 1])   # convex
-  # round: snap to the discrete set
-  b_fixed = (b.value > 0.5).astype(float)
-  # polish: fix b, re-solve the remaining free variables (still convex)
-  solve_problem_with(b_fixed, free=other_vars)
-  ```
-
-  In practice the relaxed solution often lands near the box corners already, so
-  rounding is a small correction; the polish pass recovers the other variables
-  exactly given the discrete choice.
-
-The rule of thumb: "few / mostly-zero / rare" almost always has a convex
-L1-flavored relaxation (one solve); "discrete-valued" is reachable by a convex
-sequence (relax-round-polish, a heuristic); "provably-optimal discrete" is out of
-scope. Know which one you are in.
+Use the exact mixed-integer formulation when the problem size and available
+solver make it practical or when a global discrete guarantee is required. Use
+relax-round-polish when long horizons make exact search impractical and a
+checked heuristic is acceptable. See [philosophy.md](philosophy.md) for the
+operating boundary.

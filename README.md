@@ -5,10 +5,9 @@ into interpretable components (a residual plus a trend, periodic terms, sparse
 spikes, exogenous responses, …) by solving one convex problem in
 [CVXPY](https://www.cvxpy.org/).
 
-> ⚠️ **Work in progress.** The core library is implemented and tested; the
-> agent-facing skill and its reference material are being actively drafted. This
-> repository is posted early to gather feedback on the direction. Interfaces and
-> prose may change.
+> ⚠️ **Work in progress.** The core library is implemented and tested. The
+> agent-facing skill has a complete entry point and a growing reference set, but
+> several deep dives and examples remain. Interfaces and prose may change.
 
 ## What this is
 
@@ -30,7 +29,9 @@ library is a correct substrate to build on; DCP (disciplined convex
 programming) is the type system that catches malformed models before they
 produce meaningless answers. Components are a **composable vocabulary**, not a
 fixed menu — when a structure isn't in the catalog, you write the few lines of
-CVXPY that express it.
+CVXPY that express it. A Tier 1/2/3 specification hierarchy then separates
+insensitive knobs, reconstruction-tunable knobs, and structural decisions that
+must be judged on the component itself.
 
 It builds on the signal-decomposition framework of Meyers & Boyd (2023),
 *[Signal Decomposition Using Masked Proximal Operators](https://doi.org/10.1561/2000000122)*,
@@ -93,7 +94,7 @@ components in the code base. It is a proof of concept, not a guarantee.*
 
 ```bash
 uv sync            # or: pip install -e .
-uv run python -m pytest   # 97 tests
+uv run python -m pytest   # 98 tests
 ```
 
 Requires Python ≥ 3.13. Core dependencies: CVXPY, NumPy, SciPy, pandas,
@@ -108,14 +109,15 @@ the core library does not depend on it.
 - [x] Time-axis standardization and the sub-daily heat-map diagnostic
 - [x] Validation & downstream: holdout selection, bootstrap CIs,
       expanding-window stability, reporting / pandas round-trip
-- [x] Test suite (97 passing)
-- [x] `SKILL.md` — the agent-facing entry point (first draft)
-- [ ] `reference/` — the deep-dive material (in progress: **formulation** and
-      **component-catalog** done; periodic & time, model specification,
-      implementation, downstream, recontextualization, marimo, philosophy,
-      gotchas remaining)
-- [ ] Worked examples (PV degradation; hourly electrical load)
-- [ ] Contributor & usage documentation
+- [x] Test suite (98 passing)
+- [x] `SKILL.md` — concise agent-facing entry point and workflow router
+- [x] Core references: formulation, component catalog, diagnostics, marimo,
+      model specification, implementation, and philosophy
+- [ ] Remaining references: periodic & time, time-axis preparation, downstream,
+      recontextualization, and gotchas
+- [x] PV degradation worked example
+- [ ] Hourly electrical-load worked example
+- [ ] Broader contributor and usage documentation
 
 ## Feedback
 
