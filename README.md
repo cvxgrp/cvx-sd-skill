@@ -11,7 +11,9 @@ spikes, exogenous responses, …) by solving one convex problem in
 
 ## What this is
 
-Two things live here, and they're meant to work together:
+This repo pairs a thin, verifiable mathematical substrate with an agent-facing 
+methodology for under-specified model design. Two things live here, and
+they're meant to work together:
 
 1. **A small, tested Python library** (`signaldecomp`) that builds and solves
    masked signal-decomposition problems. Missing data is native — the
