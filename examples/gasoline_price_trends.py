@@ -13,7 +13,7 @@
 
 import marimo
 
-__generated_with = "0.23.15"
+__generated_with = "0.23.14"
 app = marimo.App(width="medium")
 
 
@@ -75,15 +75,13 @@ def _(Path, np, pd):
 
 @app.cell
 def _(data_path, mo, observed_mask, price_frame):
-    mo.md(
-        f"""
-        **Input:** `{data_path.name}` ·
-        **Record:** {price_frame.index.min().date()}–{price_frame.index.max().date()} ·
-        **Grid:** {len(price_frame):,} weekly samples,
-        {int(observed_mask.sum()):,} observed,
-        {int((~observed_mask).sum())} missing
-        """
-    )
+    mo.md(f"""
+    **Input:** `{data_path.name}` ·
+    **Record:** {price_frame.index.min().date()}–{price_frame.index.max().date()} ·
+    **Grid:** {len(price_frame):,} weekly samples,
+    {int(observed_mask.sum()):,} observed,
+    {int((~observed_mask).sum())} missing
+    """)
     return
 
 
