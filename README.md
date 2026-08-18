@@ -2,7 +2,8 @@
 
 **Convex signal decomposition for scalar time series** — decompose a 1-D signal
 into interpretable components (a residual plus a trend, periodic terms, sparse
-spikes, exogenous responses, …) by solving one convex problem in
+spikes, exogenous responses, …) by solving one convex problem or a specified
+deterministic sequence of convex problems modeled in
 [CVXPY](https://www.cvxpy.org/).
 
 > ⚠️ **Work in progress.** The core library is implemented and tested. The

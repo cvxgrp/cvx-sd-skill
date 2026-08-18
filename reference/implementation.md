@@ -94,7 +94,8 @@ index.
 
 For a Tier-3 scan, apply the structural acceptance rule to full-data fits and
 preserve its null path. If no candidate is admissible, return the specified
-null or most-regularized model rather than forcing a feature. See
+null rather than forcing a feature. That null may be the most-regularized fit
+or a separately built model that omits the optional component. See
 [model-specification.md](model-specification.md).
 
 ## Solver policy
@@ -129,8 +130,14 @@ contract.
 ## Uncertainty comes last
 
 Run `bootstrap_ci` only after tuning has selected the operating model for the
-dataset. Bootstrapping inside a tuning loop mixes selection variation with
-final-model uncertainty and multiplies an already expensive repeated solve.
+dataset. The result is conditional uncertainty for that frozen preprocessing,
+model specification, tuning result, and extractor. It does not measure
+end-to-end procedural uncertainty.
+
+To target end-to-end procedural uncertainty, rerun preprocessing, tuning,
+selection, fitting, and extraction inside each outer bootstrap replicate. That
+is a different and substantially more expensive procedure; report it
+separately rather than describing a final-model bootstrap as end-to-end.
 
 Bootstrap and expanding-window analysis rebuild by design because their data
 change. Supply a `build_fn(y) -> built` and an explicit extractor for the

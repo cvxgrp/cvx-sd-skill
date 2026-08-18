@@ -91,6 +91,11 @@ important numeric paths in a live kernel as well.
 `memories/` and `plans/` are git-ignored local notes. Do not rely on them being
 present or place public-facing content there.
 
+The deferred structural path-selection/API evaluation is preserved in
+`plans/2026-08-18-structural-path-selection-contract.md`; revisit it only after
+another independent use case demonstrates the same failure mode or a concrete
+caller needs the proposed contract.
+
 ## License
 
 Apache-2.0. New source files should be compatible; see `LICENSE` / `NOTICE`.

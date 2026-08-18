@@ -2,8 +2,9 @@
 
 Decompose a 1-D signal ``y`` into interpretable components -- a residual plus
 structural terms (trend, periodic, sparse, exogenous, ...) -- by solving a
-convex problem in CVXPY. Missing data is native: the consistency constraint is
-imposed only on observed entries.
+convex problem or a specified deterministic sequence of convex problems modeled
+in CVXPY. Missing data is native: the consistency constraint is imposed only on
+observed entries.
 
 Primary entry points::
 

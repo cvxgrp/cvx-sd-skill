@@ -13,7 +13,8 @@ allowed-tools: Read, Write, Edit, Bash(uv run **)
 ---
 
 Convex signal decomposition separates a scalar time series into a residual and
-interpretable structural components by solving one convex problem. Use
+interpretable structural components by solving one convex problem or a
+specified deterministic sequence. Use
 **CVXPY** as the modeling language, **`signaldecomp`** as the scaffold that
 enforces the decomposition invariants, and **disciplined convex programming
 (DCP)** as the check that keeps generated models convex and composable.
@@ -170,8 +171,9 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   use `Timedelta.total_seconds()`, never `.seconds`.
 - **Do not holdout-tune a structural knob.** If a knob changes component shape
   without moving the reconstruction, judge the component by looking.
-- **Bootstrap only the final model.** Do not mix tuning variation with
-  final-model uncertainty.
+- **Name the uncertainty target.** Bootstrapping a selected, frozen model gives
+  conditional uncertainty; it does not include variation from preprocessing,
+  model specification, tuning, or selection.
 
 ## Reference
 

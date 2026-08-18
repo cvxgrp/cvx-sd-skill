@@ -107,19 +107,25 @@ Automate Tier 3 with a component-specific acceptance rule. For a
 piecewise-constant component, scan its weight on the full dataset and retain
 fits that:
 
-1. improve reconstruction enough to justify including the component;
+1. improve reconstruction enough to justify including the component, when
+   reconstruction meaningfully distinguishes the competing models;
 2. contain no more than a plausible number of jumps;
 3. contain no jump below a meaningful effect size.
 
-Then choose the least-regularized admissible fit. Reconstruction improvement is
-a gate, not the quantity being optimized; jump count and minimum jump magnitude
-define structural credibility. The same pattern generalizes: translate what a
-human would reject in the component into explicit admissibility checks, then
-select among the surviving fits.
+Then choose the least-regularized admissible fit. Use reconstruction improvement
+as an admissibility gate only when competing models produce meaningfully
+different reconstruction performance. When components can exchange signal
+while reconstruction remains nearly unchanged, rely on component-specific
+structural evidence and comparison with the explicit null instead. Jump count
+and minimum jump magnitude define structural credibility in this example. The
+same pattern generalizes: translate what a human would reject in the component
+into explicit admissibility checks, then select among the surviving fits.
 
 The rule must admit a **null result**. If no candidate satisfies the structural
-acceptance checks, select the most-regularized, no-event model rather than
-forcing a detection. In an event detector, the minimum effect size is the
+acceptance checks, select a specified structural null rather than forcing a
+detection. The null may be a limiting or most-regularized no-event fit, or a
+separate model that omits the optional component entirely; declare which
+representation is used. In an event detector, the minimum effect size is the
 sensitivity control: raising it suppresses false positives but misses smaller
 real events; lowering it increases sensitivity at the cost of more false
 positives. Treat it as a domain specification, not a fit-derived weight.
@@ -154,7 +160,10 @@ ship as constants. Without a tuning set, a Tier-2 selector may need to run on
 each production batch. A Tier-3 rule must travel with the model whenever new
 data can change the structural feature being measured.
 
-Run bootstrap confidence intervals only after the operating model has been
-selected for the dataset. Bootstrapping inside the tuning loop mixes model
-selection variation with final-model uncertainty. See
-[implementation.md](implementation.md) for repeated-solve mechanics.
+Run conditional bootstrap confidence intervals only after the operating model
+has been selected for the dataset. These intervals condition on preprocessing,
+model specification, and the selection rule's realized choice. End-to-end
+procedural uncertainty is a different target: estimate it only by rerunning the
+entire preprocessing, tuning, selection, and fitting procedure within each
+outer replicate. See [implementation.md](implementation.md) for repeated-solve
+mechanics.
