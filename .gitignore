@@ -36,4 +36,5 @@ skills-lock.json
 
 # generated scratch data (regenerable from scripts)
 scratch/*.csv
+scratch/*.pptx
 scratch/gasoline-prices/
