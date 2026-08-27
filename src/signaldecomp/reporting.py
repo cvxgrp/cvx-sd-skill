@@ -16,6 +16,24 @@ import numpy as np
 import pandas as pd
 
 
+def _structural_values(out, T):
+    """Return full-length structural roles without mistaking aux vectors for roles."""
+    values = out["values"]
+    if "component_metadata" in out:
+        role_names = out["component_metadata"]
+    else:
+        # Compatibility with solved-output dictionaries created before roles
+        # were retained explicitly through component metadata.
+        role_names = (role for role in values if role != "residual")
+    structural = {}
+    for role in role_names:
+        val = values[role]
+        arr = np.asarray(val, dtype=float) if np.ndim(val) else None
+        if arr is not None and arr.shape == (T,):
+            structural[role] = arr
+    return structural
+
+
 def components_to_frame(out, index=None, y=None, mask=None):
     """Re-wrap solved decomposition components as a pandas DataFrame.
 
@@ -66,13 +84,7 @@ def components_to_frame(out, index=None, y=None, mask=None):
 
     # Full-length structural components, in solve order (dict preserves order),
     # excluding the residual and any non-length-T aux.
-    structural = {}
-    for role, val in values.items():
-        if role == "residual":
-            continue
-        arr = np.asarray(val, dtype=float) if np.ndim(val) else None
-        if arr is not None and arr.shape == (T,):
-            structural[role] = arr
+    structural = _structural_values(out, T)
 
     reconstruction = (
         np.sum(np.stack(list(structural.values()), axis=0), axis=0)
@@ -245,7 +257,7 @@ def plot_stability(stability, role=None, figsize=None):
         snap = stability["snapshots"][role]
         for i in range(F):
             row = snap[i]
-            valid = ~np.isnan(row)
+            valid = np.isfinite(row)
             if valid.any():
                 ax.plot(np.where(valid)[0], row[valid], color=colors[i],
                         lw=0.7, alpha=0.7)
@@ -311,7 +323,7 @@ def format_report(out, y=None, title="Signal decomposition"):
     out : dict
         A solved output from :func:`signaldecomp.solve`.
     y : numpy.ndarray, optional
-        The observed signal; enables fit RMS/MAE on observed entries and mask
+        The observed signal; enables fit RMS/MAE on fitted entries and mask
         coverage.
     title : str
         Heading for the report.
@@ -326,16 +338,16 @@ def format_report(out, y=None, title="Signal decomposition"):
         raise ValueError("out['values'] has no 'residual'; not a solved output.")
     residual = np.asarray(values["residual"], dtype=float)
     T = residual.shape[0]
+    fit_mask = np.asarray(out.get("fit_mask", np.ones(T, dtype=bool)))
+    if fit_mask.dtype != np.bool_ or fit_mask.shape != (T,):
+        raise ValueError(f"out['fit_mask'] must be a boolean array of shape ({T},).")
 
-    structural = {}
+    structural = _structural_values(out, T)
     scalar_aux = {}
     for role, val in values.items():
         if role == "residual":
             continue
-        arr = np.asarray(val, dtype=float) if np.ndim(val) else None
-        if arr is not None and arr.shape == (T,):
-            structural[role] = arr
-        elif np.ndim(val) == 0:
+        if role not in structural and np.ndim(val) == 0:
             scalar_aux[role] = float(val)
 
     reconstruction = (
@@ -363,19 +375,33 @@ def format_report(out, y=None, title="Signal decomposition"):
     lines.append("")
     lines.append("## Residual")
     lines.append("")
-    lines.append(f"- **residual RMS:** {np.sqrt(np.mean(residual**2)):.4g}")
-    lines.append(f"- **residual MAE:** {np.mean(np.abs(residual)):.4g}")
+    fitted_residual = residual[fit_mask]
+    lines.append(
+        f"- **residual RMS (fitted):** "
+        f"{np.sqrt(np.mean(fitted_residual**2)):.4g}"
+    )
+    lines.append(
+        f"- **residual MAE (fitted):** {np.mean(np.abs(fitted_residual)):.4g}"
+    )
     if y is not None:
         y = np.asarray(y, dtype=float)
-        obs = ~np.isnan(y)
+        if y.shape != (T,):
+            raise ValueError(f"y shape {y.shape} != ({T},).")
+        obs = np.isfinite(y)
         n_obs = int(obs.sum())
-        err = reconstruction[obs] - y[obs]
+        report_fit_mask = obs & fit_mask
+        n_fit = int(report_fit_mask.sum())
+        err = reconstruction[report_fit_mask] - y[report_fit_mask]
         lines.append(
             f"- **observed entries:** {n_obs} / {T} "
             f"({100.0 * n_obs / T:.1f}% coverage)"
         )
-        lines.append(f"- **fit RMS (observed):** {np.sqrt(np.mean(err**2)):.4g}")
-        lines.append(f"- **fit MAE (observed):** {np.mean(np.abs(err)):.4g}")
+        lines.append(
+            f"- **fitted entries:** {n_fit} / {T} "
+            f"({100.0 * n_fit / T:.1f}% coverage)"
+        )
+        lines.append(f"- **fit RMS (fitted):** {np.sqrt(np.mean(err**2)):.4g}")
+        lines.append(f"- **fit MAE (fitted):** {np.mean(np.abs(err)):.4g}")
 
     if scalar_aux:
         lines.append("")

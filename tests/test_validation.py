@@ -1,9 +1,10 @@
 """Tests for the domain-agnostic validation layer."""
 
+import cvxpy as cp
 import numpy as np
 import pytest
 
-from signaldecomp import linear_trend, make_problem, smooth_trend, solve
+from signaldecomp import Component, linear_trend, make_problem, smooth_trend, solve
 from signaldecomp import multiperiodic
 from signaldecomp.validation import (
     bootstrap_ci,
@@ -88,6 +89,45 @@ def test_bootstrap_ci_preserves_mask():
     ci = bootstrap_ci(y, _slope_build_fn, _slope, block_size=15,
                       n_resamples=100, random_state=5)
     assert "value" in ci
+
+
+def test_bootstrap_ci_resamples_only_exact_fitting_rows():
+    y = _linear_signal(T=80, gap=(30, 35))
+    availability = np.ones(y.shape[0], dtype=bool)
+    availability[:5] = False
+    availability[-4:] = False
+    seen = []
+
+    def build_fn(sig):
+        seen.append(np.array(sig, copy=True))
+
+        def build(T):
+            return cp.Constant(np.zeros(T)), 0, []
+
+        return make_problem(
+            sig,
+            components=[
+                linear_trend(role="trend"),
+                Component("availability", build, valid_mask=availability),
+            ],
+        )
+
+    bootstrap_ci(
+        y,
+        build_fn,
+        _slope,
+        block_size=5,
+        n_resamples=8,
+        min_success_fraction=0.0,
+        random_state=7,
+    )
+
+    observed_but_unavailable = ~np.isnan(y) & ~availability
+    assert len(seen) == 9  # point solve plus eight resamples
+    for resample in seen[1:]:
+        assert np.array_equal(
+            resample[observed_but_unavailable], y[observed_but_unavailable]
+        )
 
 
 def test_bootstrap_ci_requires_block_size_positive():
@@ -266,6 +306,55 @@ def test_holdout_explicit_slice_and_mae():
     assert res["metric"] == "mae"
     assert np.array_equal(res["holdout_index"], np.arange(200, 260))
     assert res["best"] == "trend+periodic"
+
+
+def test_holdout_excludes_nonfinite_truth_rows():
+    y = 1.0 + 0.02 * np.arange(80)
+    y[45] = np.inf
+    y[50] = -np.inf
+    res = holdout_select(
+        y,
+        {"trend": _slope_build_fn},
+        holdout_slice=slice(40, 55),
+    )
+    expected = np.array([i for i in range(40, 55) if i not in (45, 50)])
+    assert np.array_equal(res["requested_holdout_index"], expected)
+    assert np.array_equal(res["holdout_index"], expected)
+
+
+def test_holdout_scores_common_component_availability():
+    y = 2.0 + 0.03 * np.arange(80)
+    available_a = np.ones(y.shape[0], dtype=bool)
+    available_b = np.ones(y.shape[0], dtype=bool)
+    available_a[45:49] = False
+    available_b[52:56] = False
+
+    def candidate(availability):
+        def build_fn(sig):
+            def build(T):
+                return cp.Constant(np.zeros(T)), 0, []
+
+            return make_problem(
+                sig,
+                components=[
+                    linear_trend(role="trend"),
+                    Component("availability", build, valid_mask=availability),
+                ],
+            )
+
+        return build_fn
+
+    res = holdout_select(
+        y,
+        {"a": candidate(available_a), "b": candidate(available_b)},
+        holdout_slice=slice(40, 60),
+    )
+    requested = np.arange(40, 60)
+    expected = requested[(available_a & available_b)[requested]]
+    assert np.array_equal(res["requested_holdout_index"], requested)
+    assert np.array_equal(res["holdout_index"], expected)
+    assert np.isfinite(res["scores"]["a"])
+    assert np.isfinite(res["scores"]["b"])
 
 
 def test_holdout_rejects_bad_metric():

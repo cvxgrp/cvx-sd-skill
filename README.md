@@ -17,9 +17,10 @@ methodology for under-specified model design. Two things live here, and
 they're meant to work together:
 
 1. **A small, tested Python library** (`signaldecomp`) that builds and solves
-   masked signal-decomposition problems. Missing data is native — the
-   consistency constraint is imposed only on observed entries, so the same
-   mechanism handles gaps, held-out validation, and imputation.
+   masked signal-decomposition problems. Unavailable data is native — the
+   consistency constraint is imposed where the signal is observed and every
+   component input is valid, so the same mechanism handles gaps, holdouts,
+   offset boundaries, missing drivers, and imputation.
 
 2. **An agent skill** (`SKILL.md` + `reference/`) that teaches a
    capable language model to *formulate* signal decompositions well: to
@@ -101,8 +102,13 @@ components in the code base. It is a proof of concept, not a guarantee.*
 - [`examples/gasoline_price_trends.py`](examples/gasoline_price_trends.py)
   compares linear, smooth, piecewise-linear, and piecewise-constant trends in
   weekly gasoline prices using holdout and structural evidence.
+- [`examples/lagged_exogenous_response.py`](examples/lagged_exogenous_response.py)
+  demonstrates ordered exogenous offsets, exact training-mask construction,
+  penalty-preserving spline whitening, and held-out scoring.
 
-Open either marimo notebook from the repository root with
+Run the exogenous example with
+`uv run python examples/lagged_exogenous_response.py`. Open either interactive
+marimo notebook from the repository root with
 `uv run python -m marimo edit <path>`.
 
 ## Install
@@ -117,7 +123,7 @@ For local library development:
 
 ```bash
 uv sync            # or: pip install -e .
-uv run python -m pytest   # 98 tests
+uv run python -m pytest
 ```
 
 Requires Python ≥ 3.13. Core dependencies: CVXPY, NumPy, SciPy, pandas,
@@ -133,7 +139,9 @@ it.
 - [x] Time-axis standardization and the sub-daily heat-map diagnostic
 - [x] Validation & downstream: holdout selection, bootstrap CIs,
       expanding-window stability, reporting / pandas round-trip
-- [x] Test suite (98 passing)
+- [x] Offset exogenous responses with support/rank diagnostics and opt-in,
+      penalty-preserving basis whitening
+- [x] Test suite
 - [x] `SKILL.md` — concise agent-facing entry point and workflow router
 - [x] Core references: formulation, component catalog, diagnostics, marimo,
       model specification, implementation, and philosophy
@@ -158,5 +166,7 @@ https://doi.org/10.1561/2000000122
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The natural
+cubic spline basis includes BSD-3-Clause-derived work; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Copyright 2025 Bennet Meyers and the Alliance for Sustainable Energy, LLC.

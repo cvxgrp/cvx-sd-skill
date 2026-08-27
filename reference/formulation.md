@@ -21,28 +21,35 @@ index. The residual is keyed `"residual"`.
 
 ## The mask: missing data as a linear operator
 
-Let `M` select the observed entries. Apply it to the consistency constraint:
+Let `M` select rows where the signal is observed **and** every component input
+needed for that row is available. Apply it to the consistency constraint:
 
     M y = M (x0 + x1 + ... + xK)
 
-i.e. require the components to sum to `y` only where `y` is known. One mechanism
-therefore handles:
+i.e. require the components to sum to `y` only where the model has all required
+inputs. One mechanism therefore handles:
 
 - **missing data** — entries absent in the raw signal;
 - **held-out validation** — known entries you *pretend* are missing, then score
   the imputation against the truth (this is `holdout_select`);
 - **unobserved grid points** — the model is defined on every grid point even
   where you never had data.
+- **unavailable exogenous inputs** — an offset boundary or missing driver value
+  cannot participate in the fitted linking constraint.
 
-All three mean “not in `M`.” In CVXPY, implement `M` with boolean indexing:
+All four mean “not in `M`.” In CVXPY, implement `M` with boolean indexing. The
+basic case has no component-level exclusions:
 
 ```python
-mask = ~np.isnan(y)
+mask = np.isfinite(y)
 constraints.append(y[mask] == total[mask])
 ```
 
-`make_problem` returns the boolean array as `built["mask"]`; no selector matrix
-is materialized.
+For compatibility, `make_problem` returns the observed-`y` array as
+`built["mask"]`. Component availability independent of `y` is retained as
+`built["component_mask"]`. The exact linking rows are `built["fit_mask"]`;
+they are equal when every component is available everywhere. No selector
+matrix is materialized.
 
 ## What a component is
 
@@ -66,6 +73,12 @@ A catalog builder and a hand-written `build` produce the same `Component`
 interface. Wrappers such as `bounded` and `nonneg` add indicators without
 changing the inner penalty. For x0, `ell_0` is the data-fidelity loss and
 `I_0` is empty.
+
+A component may additionally carry `valid_mask`, marking rows where its inputs
+are available, and `parameterization_mask`, recording the exact rows used for
+fitted preprocessing such as whitening. The latter must match the final
+`fit_mask`; mismatch raises rather than leaking holdout information or
+conditioning an operator different from the one sent to the solver.
 
 ## Loss as (often improper) prior
 

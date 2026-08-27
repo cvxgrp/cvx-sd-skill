@@ -159,25 +159,44 @@ leap years, harmonics-per-scale, and the trend↔seasonal confound.
 Unlike time-based components, these are functions of an external covariate `z`
 (time-aligned, `len(z) == T`). The covariate is captured at construction.
 
-- **`exog_linear(z, weight=0.0, role="exog")`** — a linear response `beta * z`
-  (e.g. load proportional to irradiance). Aux `<role>_beta` is the scalar
-  coefficient. Belief: "the signal responds linearly to `z`."
+- **`exog_linear(z, weight=0.0, role="exog", *, offsets=(0,),
+  lag_smooth_weight=0.0)`** — a linear response to one or more ordered offsets
+  of `z` (e.g. load proportional to current and past irradiance). Aux
+  `<role>_beta` is scalar for one offset and a vector for several. Belief: "the
+  signal responds linearly to `z`."
 
   ```python
-  expr = beta * z                 # linear response to covariate z
-  loss = weight * cp.square(beta) # optional ridge on the coefficient
+  Z = make_offset_basis(z, offsets).design
+  expr = Z @ beta
+  loss = weight * cp.sum_squares(beta)
+  loss += lag_smooth_weight * cp.sum_squares(cp.diff(beta))
   ```
-- **`exog_spline(z, n_knots=10, knots=None, weight=0.01, role="exog")`** — a
-  smooth, possibly nonlinear response via a natural cubic spline `H(z) @ coef`
-  (linear beyond the boundary knots; constant column dropped). `weight` is a
-  ridge penalty controlling smoothness; more knots = more flexible. Aux
-  `<role>_coef`. Belief: "the signal responds smoothly but nonlinearly to `z`"
-  (e.g. a U-shaped load-vs-temperature curve).
+- **`exog_spline(z, n_knots=10, knots=None, weight=0.01, role="exog", *,
+  offsets=(0,), lag_smooth_weight=0.0, whiten=False, fit_mask=None,
+  rank_tolerance=None, knot_policy=None)`** — a smooth, possibly nonlinear
+  response via natural-cubic spline blocks (linear beyond the boundary knots;
+  constant column dropped). `weight` is a ridge penalty on original basis
+  coefficients; `lag_smooth_weight` smooths those coefficients across ordered
+  offsets. Aux `<role>_coef` always exposes original coordinates. With opt-in
+  whitening, `<role>_numerical_coef` exposes solver coordinates separately.
+  Belief: "the signal responds smoothly but nonlinearly to `z`" (e.g. a
+  U-shaped load-vs-temperature curve).
 
   ```python
   expr = H(z) @ coef                   # natural cubic spline basis in z (const col dropped)
   loss = weight * cp.sum_squares(coef) # ridge -> smoothness
   ```
+
+Offsets satisfy `shifted[t] = z[t - offset]`: positive uses past values and
+negative uses future values. Undefined boundary/source rows are excluded from
+`built["fit_mask"]`. To translate TSGAM's currently implemented `lags`, negate
+their signs: `offsets = tuple(-lag for lag in lags)`.
+
+Whitening is a numerical reparameterization, not a support or rank repair. It
+requires the exact fitting mask, rejects deficient bases, and transforms every
+penalty through the inverse coordinate map. Determine knots from training data
+only. Read [exogenous-numerics.md](exogenous-numerics.md) before using spline
+whitening, support policies, or multiple offsets.
 
 ## Wrappers: adding constraints to any component
 

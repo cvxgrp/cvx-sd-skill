@@ -50,6 +50,20 @@ def test_frame_columns_exclude_scalar_aux():
     assert "daily_theta" not in df.columns
 
 
+def test_frame_uses_declared_roles_when_aux_vector_happens_to_match_length():
+    out = {
+        "values": {
+            "residual": np.zeros(3),
+            "driver": np.ones(3),
+            "driver_beta": np.array([10.0, 20.0, 30.0]),
+        },
+        "component_metadata": {"driver": {}},
+    }
+    df = components_to_frame(out)
+    assert set(df.columns) == {"driver", "residual", "reconstruction"}
+    assert np.array_equal(df["reconstruction"], np.ones(3))
+
+
 def test_frame_index_alignment_and_default_range_index():
     out, std = _solved_with_gap()
     df = components_to_frame(out, index=std["index"])
@@ -183,7 +197,7 @@ def test_format_report_structure_and_shares():
     assert "**trend:**" in md and "**seas:**" in md
     assert "## Residual" in md
     assert "residual RMS" in md
-    assert "fit RMS (observed)" in md
+    assert "fit RMS (fitted)" in md
     assert "## Scalar quantities" in md
     assert "trend_b" in md
 
@@ -204,8 +218,26 @@ def test_format_report_without_y_omits_fit_stats():
     out, _, _ = _solved_two_role()
     md = format_report(out)
     assert "residual RMS" in md  # residual stats always present
-    assert "fit RMS (observed)" not in md  # fit stats require y
+    assert "fit RMS (fitted)" not in md  # fit stats require y
     assert "coverage" not in md
+
+
+def test_format_report_uses_exact_fit_mask_for_residual_and_fit_stats():
+    out, y, _ = _solved_two_role()
+    fit_mask = np.ones(y.shape[0], dtype=bool)
+    fit_mask[:10] = False
+    residual = out["values"]["residual"].copy()
+    residual[:10] = 1e6
+    limited = {
+        **out,
+        "fit_mask": fit_mask,
+        "values": {**out["values"], "residual": residual},
+    }
+
+    md = format_report(limited, y=y)
+    expected_rms = np.sqrt(np.mean(residual[fit_mask] ** 2))
+    assert f"**residual RMS (fitted):** {expected_rms:.4g}" in md
+    assert f"**fitted entries:** {fit_mask.sum()} / {y.size}" in md
 
 
 def test_format_report_rejects_non_solved_output():

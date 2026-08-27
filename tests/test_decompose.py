@@ -56,6 +56,59 @@ def test_mask_matches_observed_entries():
     y, _ = _synthetic()
     built = make_problem(y, components=[smooth_trend(weight=1e2)])
     assert np.array_equal(built["mask"], ~np.isnan(y))
+    assert np.array_equal(
+        built["component_mask"], np.ones(y.shape[0], dtype=bool)
+    )
+    assert np.array_equal(built["fit_mask"], built["mask"])
+
+
+def test_component_valid_mask_restricts_linking_but_not_observation_mask():
+    y = np.arange(8.0)
+    valid = np.ones(8, dtype=bool)
+    valid[[0, 7]] = False
+
+    def build(T):
+        return cp.Variable(T), 0, []
+
+    built = make_problem(y, components=[Component("limited", build, valid_mask=valid)])
+    assert np.array_equal(built["mask"], np.ones(8, dtype=bool))
+    assert np.array_equal(built["component_mask"], valid)
+    assert np.array_equal(built["fit_mask"], valid)
+
+
+def test_component_masks_must_be_boolean_and_match_length():
+    y = np.arange(8.0)
+
+    def build(T):
+        return cp.Variable(T), 0, []
+
+    with pytest.raises(TypeError, match="boolean"):
+        make_problem(y, [Component("bad", build, valid_mask=np.ones(8))])
+    with pytest.raises(ValueError, match="shape"):
+        make_problem(y, [Component("bad", build, valid_mask=np.ones(7, dtype=bool))])
+
+
+def test_parameterization_mask_must_match_final_fit_mask():
+    y = np.arange(8.0)
+    valid = np.ones(8, dtype=bool)
+    parameterization = valid.copy()
+    parameterization[0] = False
+
+    def build(T):
+        return cp.Variable(T), 0, []
+
+    with pytest.raises(ValueError, match="exactly match"):
+        make_problem(
+            y,
+            [
+                Component(
+                    "mismatch",
+                    build,
+                    valid_mask=valid,
+                    parameterization_mask=parameterization,
+                )
+            ],
+        )
 
 
 def test_residual_is_x0_and_present():
@@ -82,6 +135,17 @@ def test_rejects_non_1d_signal():
 def test_rejects_all_missing():
     with pytest.raises(ValueError, match="observed"):
         make_problem(np.full(10, np.nan), components=[])
+
+
+def test_observed_mask_requires_finite_values():
+    y = np.array([1.0, np.inf, 2.0, -np.inf, np.nan])
+    built = make_problem(y, components=[])
+    expected = np.array([True, False, True, False, False])
+    assert np.array_equal(built["mask"], expected)
+    assert np.array_equal(built["fit_mask"], expected)
+
+    with pytest.raises(ValueError, match="observed finite"):
+        make_problem(np.array([np.nan, np.inf, -np.inf]), components=[])
 
 
 def test_residual_loss_accepts_callable():

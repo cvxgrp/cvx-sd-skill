@@ -3,8 +3,8 @@
 Decompose a 1-D signal ``y`` into interpretable components -- a residual plus
 structural terms (trend, periodic, sparse, exogenous, ...) -- by solving a
 convex problem or a specified deterministic sequence of convex problems modeled
-in CVXPY. Missing data is native: the consistency constraint is imposed only on
-observed entries.
+in CVXPY. Unavailable data is native: the consistency constraint is imposed on
+rows where the signal is observed and every component input is valid.
 
 Primary entry points::
 
@@ -32,6 +32,13 @@ from signaldecomp.components import (
     smooth_trend,
     sparse,
 )
+from signaldecomp.basis_numerics import (
+    BasisRankDiagnostics,
+    BasisRankError,
+    BasisWhitening,
+    basis_rank_diagnostics,
+    whiten_basis,
+)
 from signaldecomp.data_fidelity import (
     huber_loss,
     l1_loss,
@@ -45,6 +52,7 @@ from signaldecomp.heatmap import (
     plot_heatmap,
     steps_per_day,
 )
+from signaldecomp.exogenous import OffsetBasis, make_offset_basis, offset_source_mask
 from signaldecomp.periodic import (
     SECONDS_PER_DAY,
     SECONDS_PER_WEEK,
@@ -57,6 +65,7 @@ from signaldecomp.reporting import (
     plot_decomposition,
     plot_stability,
 )
+from signaldecomp.spline import SplineSupportDiagnostics, spline_support_diagnostics
 from signaldecomp.transform import prepare_input, recover_components, recover_frame
 from signaldecomp.time_axis import (
     derive_delta,
@@ -76,6 +85,17 @@ __all__ = [
     "Component",
     "make_problem",
     "solve",
+    # basis numerics and exogenous design
+    "BasisRankDiagnostics",
+    "BasisRankError",
+    "BasisWhitening",
+    "basis_rank_diagnostics",
+    "whiten_basis",
+    "OffsetBasis",
+    "make_offset_basis",
+    "offset_source_mask",
+    "SplineSupportDiagnostics",
+    "spline_support_diagnostics",
     # components
     "multiperiodic",
     "linear_trend",
