@@ -112,6 +112,47 @@ by the difference length; L2² expresses total global roughness and is not
 length-normalized. This keeps locally sparse weights comparable across record
 lengths without changing the meaning of global smoothness.
 
+## Grouped/block components
+
+These components assign one coefficient to each declared group and expand it
+back to the sample grid with a one-hot design. The grouping is caller-owned:
+pass a length-`T` label vector or an explicit `T x G` mapping matrix. Timestamp
+frequency inference does not belong in the builders.
+
+- **`make_group_basis(groups=None, *, mapping=None, group_order=None)`** builds
+  the shared design. Label columns follow explicit `group_order` or first
+  appearance. Missing labels and all-zero mapping rows remain finite zeros but
+  are excluded through the component-validity mask. Monotonicity and
+  differences always follow this declared order, never implicitly sorted
+  labels.
+- **`grouped_trend(..., weight=0.0, monotonic=None, baseline=None,
+  role="trend")`** is constant within each group and penalizes squared first
+  differences between ordered group values. Set `monotonic` to `"increasing"`
+  or `"decreasing"`; set `baseline=value` to hard-anchor the first ordered
+  group. Aux `<role>_group_values` exposes the ordered coefficients.
+
+  ```python
+  expr = group_design @ group_values
+  loss = weight * cp.sum_squares(cp.diff(group_values))
+  constraints = [group_values[0] == baseline]  # when requested
+  ```
+
+- **`grouped_sparse(..., weight=..., role="grouped_sparse")`** represents a
+  few anomalous groups whose correction is constant for every sample in the
+  group. Its L1 penalty follows the package's local sparsity convention and is
+  normalized per group, not per sample. Aux `<role>_group_values` exposes the
+  ordered corrections.
+
+  ```python
+  expr = group_design @ group_values
+  loss = weight / n_groups * cp.norm1(group_values)
+  ```
+
+These are distinct from `pwc_trend`: a PWC trend discovers sample-level change
+points, while grouped components use a grouping supplied by the caller. They
+are also distinct from timestamp logic—the caller decides whether a group is a
+day, week, batch, device state, or something else.
+
 ## Multiperiodic (strictly periodic is a special case)
 
 - **`multiperiodic(periods, num_harmonics=6, weight=0.1, role="periodic")`** — a

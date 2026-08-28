@@ -23,6 +23,8 @@ from signaldecomp.components import (
     bounded,
     exog_linear,
     exog_spline,
+    grouped_sparse,
+    grouped_trend,
     linear_trend,
     monotone_trend,
     multiperiodic,
@@ -53,6 +55,7 @@ from signaldecomp.heatmap import (
     steps_per_day,
 )
 from signaldecomp.exogenous import OffsetBasis, make_offset_basis, offset_source_mask
+from signaldecomp.grouped import GroupBasis, make_group_basis
 from signaldecomp.periodic import (
     SECONDS_PER_DAY,
     SECONDS_PER_WEEK,
@@ -85,7 +88,7 @@ __all__ = [
     "Component",
     "make_problem",
     "solve",
-    # basis numerics and exogenous design
+    # basis numerics and design utilities
     "BasisRankDiagnostics",
     "BasisRankError",
     "BasisWhitening",
@@ -94,6 +97,8 @@ __all__ = [
     "OffsetBasis",
     "make_offset_basis",
     "offset_source_mask",
+    "GroupBasis",
+    "make_group_basis",
     "SplineSupportDiagnostics",
     "spline_support_diagnostics",
     # components
@@ -106,6 +111,8 @@ __all__ = [
     "sparse",
     "exog_linear",
     "exog_spline",
+    "grouped_trend",
+    "grouped_sparse",
     "bounded",
     "nonneg",
     # periodic helpers

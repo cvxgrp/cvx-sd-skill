@@ -27,6 +27,7 @@ import numpy as np
 from signaldecomp.basis_numerics import whiten_basis
 from signaldecomp.decompose import Component
 from signaldecomp.exogenous import make_offset_basis, offset_source_mask
+from signaldecomp.grouped import make_group_basis
 from signaldecomp.periodic import multiperiodic  # noqa: F401  (re-exported)
 from signaldecomp.spline import default_knots, make_spline_basis
 
@@ -164,6 +165,120 @@ def sparse(weight, role="sparse"):
         # Per-element normalization (see smooth_trend).
         loss = weight / x.shape[0] * cp.norm1(x)
         return x, loss, []
+
+    comp.build = build
+    return comp
+
+
+# Grouped formulations adapted from TSGAM.
+# Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Nimish Telang
+def grouped_trend(
+    groups=None,
+    *,
+    mapping=None,
+    group_order=None,
+    weight=0.0,
+    monotonic=None,
+    baseline=None,
+    role="trend",
+):
+    """Group-constant trend with smoothing and optional shape constraints.
+
+    Group coefficients follow ``group_order`` when supplied and first label
+    appearance otherwise. ``monotonic`` may be ``"increasing"`` or
+    ``"decreasing"`` in that declared order. ``baseline=value`` anchors the
+    first ordered group to that value.
+    """
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    if monotonic not in (None, "increasing", "decreasing"):
+        raise ValueError(
+            "monotonic must be None, 'increasing', or 'decreasing'."
+        )
+    if baseline is not None:
+        baseline = float(baseline)
+        if not np.isfinite(baseline):
+            raise ValueError("baseline must be finite when provided.")
+
+    group_basis = make_group_basis(
+        groups,
+        mapping=mapping,
+        group_order=group_order,
+    )
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=group_basis.valid_mask,
+        metadata={"group_basis": group_basis},
+    )
+
+    def build(T):
+        if group_basis.design.shape[0] != T:
+            raise ValueError(
+                f"group design for role {role!r} has length "
+                f"{group_basis.design.shape[0]}, expected {T}."
+            )
+        group_values = cp.Variable(
+            group_basis.n_groups, name=f"{role}_group_values"
+        )
+        comp.aux[f"{role}_group_values"] = group_values
+        expr = group_basis.design @ group_values
+        loss = (
+            weight * cp.sum_squares(cp.diff(group_values))
+            if group_basis.n_groups > 1 and weight
+            else 0
+        )
+        constraints = []
+        if baseline is not None:
+            constraints.append(group_values[0] == baseline)
+        if group_basis.n_groups > 1 and monotonic == "increasing":
+            constraints.append(cp.diff(group_values) >= 0)
+        elif group_basis.n_groups > 1 and monotonic == "decreasing":
+            constraints.append(cp.diff(group_values) <= 0)
+        return expr, loss, constraints
+
+    comp.build = build
+    return comp
+
+
+def grouped_sparse(
+    groups=None,
+    *,
+    mapping=None,
+    group_order=None,
+    weight,
+    role="grouped_sparse",
+):
+    """Group-constant sparse correction with an L1 group-value penalty."""
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    group_basis = make_group_basis(
+        groups,
+        mapping=mapping,
+        group_order=group_order,
+    )
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=group_basis.valid_mask,
+        metadata={"group_basis": group_basis},
+    )
+
+    def build(T):
+        if group_basis.design.shape[0] != T:
+            raise ValueError(
+                f"group design for role {role!r} has length "
+                f"{group_basis.design.shape[0]}, expected {T}."
+            )
+        group_values = cp.Variable(
+            group_basis.n_groups, name=f"{role}_group_values"
+        )
+        comp.aux[f"{role}_group_values"] = group_values
+        expr = group_basis.design @ group_values
+        loss = weight / group_basis.n_groups * cp.norm1(group_values)
+        return expr, loss, []
 
     comp.build = build
     return comp

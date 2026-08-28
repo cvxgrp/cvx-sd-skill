@@ -141,6 +141,7 @@ it.
       expanding-window stability, reporting / pandas round-trip
 - [x] Offset exogenous responses with support/rank diagnostics and opt-in,
       penalty-preserving basis whitening
+- [x] Explicit grouped/block trend and sparse components
 - [x] Test suite
 - [x] `SKILL.md` — concise agent-facing entry point and workflow router
 - [x] Core references: formulation, component catalog, diagnostics, marimo,
