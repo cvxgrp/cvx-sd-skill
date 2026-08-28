@@ -2,7 +2,8 @@
 
 The natural cubic spline basis in `src/signaldecomp/spline.py` and the grouped
 component formulations in `src/signaldecomp/grouped.py` and
-`src/signaldecomp/components.py` are adapted from TSGAM.
+`src/signaldecomp/components.py`, as well as the tensor-product interaction
+design in `src/signaldecomp/interactions.py`, are adapted from TSGAM.
 
 BSD 3-Clause License
 

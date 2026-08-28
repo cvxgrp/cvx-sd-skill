@@ -54,6 +54,40 @@ class BasisWhitening:
         return self.transform @ gamma
 
 
+@dataclass(frozen=True)
+class ComposedBasisWhitening:
+    """Exact two-stage whitening for an ordered collection of basis blocks.
+
+    ``transform`` maps the final numerical coefficients to the coefficients of
+    ``raw_basis``. The intermediate block transforms and joint transform are
+    retained so the full reparameterization can be audited.
+    """
+
+    raw_basis: np.ndarray
+    whitened_basis: np.ndarray
+    transform: np.ndarray
+    block_slices: tuple[slice, ...]
+    block_names: tuple[str, ...]
+    block_whitenings: tuple[BasisWhitening, ...]
+    joint_whitening: BasisWhitening
+    training_gram_error: float
+
+    @property
+    def diagnostics(self):
+        """Rank diagnostics for the jointly whitened concatenation."""
+        return self.joint_whitening.diagnostics
+
+    def recover_coefficients(self, numerical_coefficients):
+        """Map final numerical coordinates to concatenated raw coefficients."""
+        gamma = np.asarray(numerical_coefficients, dtype=float)
+        if gamma.ndim == 0 or gamma.shape[0] != self.transform.shape[1]:
+            raise ValueError(
+                "numerical_coefficients must have first dimension "
+                f"{self.transform.shape[1]}; got shape {gamma.shape}."
+            )
+        return self.transform @ gamma
+
+
 def _validated_basis_and_mask(basis, fit_mask):
     basis = np.asarray(basis, dtype=float)
     if basis.ndim != 2:
@@ -176,5 +210,123 @@ def whiten_basis(basis, fit_mask, *, rank_tolerance=None, context="basis"):
         whitened_basis=whitened_basis,
         transform=transform,
         diagnostics=diagnostics,
+        training_gram_error=gram_error,
+    )
+
+
+def whiten_basis_by_blocks(
+    blocks,
+    fit_mask,
+    *,
+    block_names=None,
+    rank_tolerance=None,
+    joint_rank_tolerance=None,
+    context="composed basis",
+):
+    """Whiten basis blocks individually and then whiten their concatenation.
+
+    Every block must be full column rank on the exact ``fit_mask``, and the
+    concatenation of the block-whitened designs must also be full column rank.
+    No columns are truncated and there is no unwhitened fallback. If
+    ``C_block`` is the block-diagonal matrix of first-stage transforms and
+    ``C_joint`` is the second-stage transform, the returned complete transform
+    is ``C_block @ C_joint``. Original-coordinate penalties must therefore be
+    expressed through ``beta = transform @ gamma``. ``rank_tolerance`` applies
+    to the raw-coordinate block audits. The joint stage uses its own
+    scale-derived default unless ``joint_rank_tolerance`` is supplied.
+    """
+    blocks = tuple(blocks)
+    if not blocks:
+        raise ValueError(f"{context}: blocks must contain at least one basis.")
+
+    validated_blocks = []
+    n_rows = None
+    for index, block in enumerate(blocks):
+        basis = np.asarray(block, dtype=float)
+        if basis.ndim != 2:
+            raise ValueError(
+                f"{context} block {index}: basis must be 2-D; got shape "
+                f"{basis.shape}."
+            )
+        if basis.shape[1] == 0:
+            raise ValueError(
+                f"{context} block {index}: basis must contain at least one column."
+            )
+        if n_rows is None:
+            n_rows = basis.shape[0]
+        elif basis.shape[0] != n_rows:
+            raise ValueError(
+                f"{context}: all blocks must have the same number of rows; "
+                f"block 0 has {n_rows} and block {index} has {basis.shape[0]}."
+            )
+        validated_blocks.append(basis)
+
+    if block_names is None:
+        names = tuple(f"block_{index}" for index in range(len(blocks)))
+    else:
+        if isinstance(block_names, str):
+            raise ValueError(
+                f"{context}: block_names must be an iterable of names, not a string."
+            )
+        names = tuple(block_names)
+        if len(names) != len(blocks):
+            raise ValueError(
+                f"{context}: block_names has length {len(names)}, expected "
+                f"{len(blocks)}."
+            )
+        if any(not isinstance(name, str) or not name for name in names):
+            raise ValueError(f"{context}: block_names must be non-empty strings.")
+        if len(set(names)) != len(names):
+            raise ValueError(f"{context}: block_names must be unique.")
+
+    block_whitenings = tuple(
+        whiten_basis(
+            basis,
+            fit_mask,
+            rank_tolerance=rank_tolerance,
+            context=f"{context} block {name!r}",
+        )
+        for basis, name in zip(validated_blocks, names, strict=True)
+    )
+    block_white_basis = np.hstack(
+        [whitening.whitened_basis for whitening in block_whitenings]
+    )
+    joint_whitening = whiten_basis(
+        block_white_basis,
+        fit_mask,
+        rank_tolerance=joint_rank_tolerance,
+        context=f"{context} joint concatenation",
+    )
+
+    widths = [basis.shape[1] for basis in validated_blocks]
+    stops = np.cumsum([0, *widths])
+    block_slices = tuple(
+        slice(int(start), int(stop))
+        for start, stop in zip(stops[:-1], stops[1:], strict=True)
+    )
+    total_width = int(stops[-1])
+    block_transform = np.zeros((total_width, total_width))
+    for block_slice, whitening in zip(
+        block_slices, block_whitenings, strict=True
+    ):
+        block_transform[block_slice, block_slice] = whitening.transform
+
+    raw_basis = np.hstack(validated_blocks)
+    transform = block_transform @ joint_whitening.transform
+    whitened_basis = raw_basis @ transform
+    mask = np.asarray(fit_mask)
+    gram = whitened_basis[mask].T @ whitened_basis[mask]
+    gram_error = float(np.linalg.norm(gram - np.eye(total_width), ord=2))
+
+    for array in (raw_basis, transform, whitened_basis):
+        array.setflags(write=False)
+    return ComposedBasisWhitening(
+        raw_basis=raw_basis,
+        whitened_basis=whitened_basis,
+        transform=transform,
+        block_slices=block_slices,
+        block_names=names,
+        block_whitenings=block_whitenings,
+        joint_whitening=joint_whitening,
         training_gram_error=gram_error,
     )

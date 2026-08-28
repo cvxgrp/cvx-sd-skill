@@ -41,6 +41,9 @@ an opaque implementation.
 - Fitted preprocessing such as spline knots or whitening must use exactly
   `fit_mask`. Components retain that parameterization mask so `make_problem`
   can reject holdout leakage or a differently conditioned operator.
+- A component may use `fit_mask_validator` for structural checks that depend on
+  the effective fitted support. It receives a read-only snapshot of the final
+  mask after observation and all component-validity masks are intersected.
 - `solve` accepts solver keyword arguments and treats `optimal` and
   `optimal_inaccurate` as successful. Test contracts with meaningful tolerances,
   not one solver's exact array.

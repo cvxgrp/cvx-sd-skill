@@ -28,6 +28,7 @@ from signaldecomp.basis_numerics import whiten_basis
 from signaldecomp.decompose import Component
 from signaldecomp.exogenous import make_offset_basis, offset_source_mask
 from signaldecomp.grouped import make_group_basis
+from signaldecomp.interactions import make_interaction_basis
 from signaldecomp.periodic import multiperiodic  # noqa: F401  (re-exported)
 from signaldecomp.spline import default_knots, make_spline_basis
 
@@ -544,6 +545,156 @@ def exog_spline(
     return comp
 
 
+# Tensor-product formulation adapted from TSGAM.
+# Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Nimish Telang
+def exog_interaction(
+    left_basis,
+    right_basis,
+    weight=0.0,
+    role="interaction",
+    *,
+    factor_names=None,
+    whiten=False,
+    fit_mask=None,
+    rank_tolerance=None,
+):
+    """Independent tensor-product interaction between two exogenous bases.
+
+    The component models all pairwise products between columns of
+    ``left_basis`` and ``right_basis``. It is separate from any main-effect
+    components: callers add those as their own roles when desired. Both factor
+    bases must be offset-free on their jointly valid rows. After the final
+    fitting mask is known, the complete tensor-product span is also audited
+    against the intercept and both main-effect spans. A one-dimensional factor
+    is treated as a one-column basis.
+
+    Parameters
+    ----------
+    left_basis, right_basis : numpy.ndarray, shape (T, q) and (T, r)
+        Current-index, offset-free factor bases. Non-finite factor rows are
+        unavailable and excluded through the component validity mask.
+    weight : float
+        Ridge weight on the original ``q x r`` coefficient matrix.
+    role : str
+        Component role name.
+    factor_names : tuple of str, optional
+        Human-readable ``(left, right)`` labels retained as metadata only.
+    whiten : bool
+        If True, exactly whiten the full-rank interaction design on
+        ``fit_mask`` while retaining the original-coordinate penalty.
+    fit_mask : numpy.ndarray, optional
+        Exact boolean rows used by the final linking constraint. Required when
+        ``whiten=True`` and checked against the interaction availability mask.
+    rank_tolerance : float, optional
+        Explicit singular-value threshold for whitening rank eligibility.
+
+    Returns
+    -------
+    Component
+        ``<role>_coef`` is the original ``q x r`` coefficient matrix. With
+        whitening, ``<role>_numerical_coef`` is the solver-coordinate vector.
+        Problem assembly raises if the interaction duplicates any lower-order
+        direction on the final fitted support.
+    """
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    if factor_names is not None:
+        if isinstance(factor_names, str):
+            raise ValueError("factor_names must contain two non-empty strings.")
+        factor_names = tuple(factor_names)
+        if len(factor_names) != 2 or any(
+            not isinstance(name, str) or not name for name in factor_names
+        ):
+            raise ValueError("factor_names must contain two non-empty strings.")
+
+    interaction_basis = make_interaction_basis(left_basis, right_basis)
+    parameterization_mask = None
+    if fit_mask is not None:
+        supplied_mask = np.array(fit_mask, copy=True)
+        if supplied_mask.dtype != np.bool_:
+            raise TypeError("fit_mask must have boolean dtype.")
+        if supplied_mask.shape != interaction_basis.valid_mask.shape:
+            raise ValueError(
+                f"fit_mask has shape {supplied_mask.shape}, expected "
+                f"{interaction_basis.valid_mask.shape}."
+            )
+        if not supplied_mask.any():
+            raise ValueError("fit_mask selects no rows.")
+        if np.any(supplied_mask & ~interaction_basis.valid_mask):
+            raise ValueError(
+                "fit_mask includes rows where an interaction factor is unavailable."
+            )
+        supplied_mask.setflags(write=False)
+        parameterization_mask = supplied_mask
+    elif whiten:
+        raise ValueError("fit_mask is required when whiten=True.")
+
+    whitening = None
+    design = interaction_basis.design
+    if whiten:
+        whitening = whiten_basis(
+            design,
+            parameterization_mask,
+            rank_tolerance=rank_tolerance,
+            context=f"interaction component {role!r}",
+        )
+        design = whitening.whitened_basis
+
+    metadata = {
+        "interaction_basis": interaction_basis,
+        "factor_names": factor_names,
+        "whitening": whitening,
+    }
+
+    def validate_fit_mask(final_fit_mask):
+        interaction_basis.validate_interaction_only(
+            final_fit_mask,
+            context=f"interaction component {role!r}",
+        )
+
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=interaction_basis.valid_mask,
+        parameterization_mask=parameterization_mask,
+        metadata=metadata,
+        fit_mask_validator=validate_fit_mask,
+    )
+
+    def build(T):
+        if interaction_basis.design.shape[0] != T:
+            raise ValueError(
+                f"interaction basis for role {role!r} has length "
+                f"{interaction_basis.design.shape[0]}, expected {T}."
+            )
+        n_coefficients = (
+            interaction_basis.left_width * interaction_basis.right_width
+        )
+        coefficient_name = (
+            f"{role}_numerical_coef" if whitening is not None else f"{role}_coef"
+        )
+        numerical_coef = cp.Variable(n_coefficients, name=coefficient_name)
+        original_coef = (
+            whitening.transform @ numerical_coef
+            if whitening is not None
+            else numerical_coef
+        )
+        comp.aux[f"{role}_coef"] = cp.reshape(
+            original_coef,
+            (interaction_basis.left_width, interaction_basis.right_width),
+            order="C",
+        )
+        if whitening is not None:
+            comp.aux[f"{role}_numerical_coef"] = numerical_coef
+        expr = design @ numerical_coef
+        loss = weight * cp.sum_squares(original_coef)
+        return expr, loss, []
+
+    comp.build = build
+    return comp
+
+
 def bounded(inner, lower=None, upper=None):
     """Wrap a component with box constraints lower <= x <= upper.
 
@@ -558,6 +709,7 @@ def bounded(inner, lower=None, upper=None):
         valid_mask=inner.valid_mask,
         parameterization_mask=inner.parameterization_mask,
         metadata=inner.metadata,
+        fit_mask_validator=inner.fit_mask_validator,
     )
 
     def build(T):

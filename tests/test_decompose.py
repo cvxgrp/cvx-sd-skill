@@ -111,6 +111,34 @@ def test_parameterization_mask_must_match_final_fit_mask():
         )
 
 
+def test_component_fit_mask_validator_receives_final_read_only_mask():
+    y = np.arange(8.0)
+    y[2] = np.nan
+    valid = np.ones(8, dtype=bool)
+    valid[5] = False
+    seen = {}
+
+    def build(T):
+        return cp.Variable(T), 0, []
+
+    def validate_fit_mask(fit_mask):
+        seen["fit_mask"] = fit_mask.copy()
+        assert not fit_mask.flags.writeable
+
+    built = make_problem(
+        y,
+        [
+            Component(
+                "validated",
+                build,
+                valid_mask=valid,
+                fit_mask_validator=validate_fit_mask,
+            )
+        ],
+    )
+    assert np.array_equal(seen["fit_mask"], built["fit_mask"])
+
+
 def test_residual_is_x0_and_present():
     y, _ = _synthetic()
     built = make_problem(y, components=[smooth_trend(weight=1e2)])

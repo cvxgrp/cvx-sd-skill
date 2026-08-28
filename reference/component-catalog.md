@@ -228,6 +228,52 @@ Unlike time-based components, these are functions of an external covariate `z`
   loss = weight * cp.sum_squares(coef) # ridge -> smoothness
   ```
 
+- **`exog_interaction(left_basis, right_basis, weight=0.0,
+  role="interaction", *, factor_names=None, whiten=False, fit_mask=None,
+  rank_tolerance=None)`** — an independent tensor-product interaction between
+  two current-index exogenous bases. If the factors have `q` and `r` columns,
+  the component has every one of their `q*r` column products. Aux
+  `<role>_coef` is the original `q x r` coefficient matrix. Main effects are
+  not implicit: add them as separate components with separate roles and
+  penalties when the model requires them. **Both input bases must be
+  offset-free:** the constant vector cannot lie in either basis's column space
+  on the jointly valid rows. This is stronger than merely omitting a column
+  named “intercept.” For example, do not pass `[1, x]` and `[1, z]`; their
+  tensor product contains an intercept and both main effects, duplicating
+  separately declared roles and making coefficient allocation penalty-
+  dependent.
+
+  Offset-free factors are necessary but not sufficient: `x` and `1/x` each
+  pass that individual check while their product is an intercept. During
+  `make_problem`, the component therefore audits the complete interaction span
+  against `[intercept, left_basis, right_basis]` on the **final effective
+  `fit_mask`**. This also catches a factor that becomes constant only after
+  holdouts or another component's unavailable rows are removed. Any shared
+  direction raises before CVXPY construction.
+
+  ```python
+  components = [
+      exog_linear(irradiance, role="irradiance_main"),
+      exog_linear(temperature, role="temperature_main"),
+      exog_interaction(
+          irradiance,
+          temperature,
+          weight=1e-2,
+          role="weather_interaction",
+          factor_names=("irradiance", "temperature"),
+      ),
+  ]
+  ```
+
+  `make_interaction_basis(left_basis, right_basis)` exposes the pure NumPy
+  design operation. Columns are left-major with the right column varying
+  fastest, matching `coef.reshape(q, r, order="C")`. A factor row containing
+  any non-finite entry becomes a finite all-zero design row and is excluded by
+  the component-validity mask. A non-finite product of otherwise finite factor
+  entries, or an exact-zero product from two nonzero entries, raises immediately
+  with a request to rescale the inputs. Opt-in whitening preserves the original
+  Frobenius ridge penalty and requires the exact final `fit_mask`.
+
 Offsets satisfy `shifted[t] = z[t - offset]`: positive uses past values and
 negative uses future values. Undefined boundary/source rows are excluded from
 `built["fit_mask"]`. To translate TSGAM's currently implemented `lags`, negate
@@ -237,7 +283,8 @@ Whitening is a numerical reparameterization, not a support or rank repair. It
 requires the exact fitting mask, rejects deficient bases, and transforms every
 penalty through the inverse coordinate map. Determine knots from training data
 only. Read [exogenous-numerics.md](exogenous-numerics.md) before using spline
-whitening, support policies, or multiple offsets.
+or interaction whitening, support policies, multiple offsets, or composed
+basis blocks.
 
 ## Wrappers: adding constraints to any component
 

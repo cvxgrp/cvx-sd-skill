@@ -142,6 +142,7 @@ it.
 - [x] Offset exogenous responses with support/rank diagnostics and opt-in,
       penalty-preserving basis whitening
 - [x] Explicit grouped/block trend and sparse components
+- [x] Tensor-product exogenous interactions and exact composed-block whitening
 - [x] Test suite
 - [x] `SKILL.md` — concise agent-facing entry point and workflow router
 - [x] Core references: formulation, component catalog, diagnostics, marimo,
@@ -168,6 +169,7 @@ https://doi.org/10.1561/2000000122
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The natural
-cubic spline basis includes BSD-3-Clause-derived work; see
+cubic spline basis, grouped components, and interaction design include
+BSD-3-Clause-derived work; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Copyright 2025 Bennet Meyers and the Alliance for Sustainable Energy, LLC.

@@ -78,7 +78,11 @@ A component may additionally carry `valid_mask`, marking rows where its inputs
 are available, and `parameterization_mask`, recording the exact rows used for
 fitted preprocessing such as whitening. The latter must match the final
 `fit_mask`; mismatch raises rather than leaking holdout information or
-conditioning an operator different from the one sent to the solver.
+conditioning an operator different from the one sent to the solver. A
+`fit_mask_validator` can enforce structural conditions that depend on the
+effective fitted support; `make_problem` calls it with a read-only snapshot of
+the final mask before building CVXPY expressions. Tensor-product interactions
+use this hook to reject overlap with intercept or main-effect directions.
 
 ## Loss as (often improper) prior
 

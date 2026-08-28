@@ -72,6 +72,10 @@ class Component:
     metadata : dict, optional
         Non-CVXPY component metadata such as resolved knots or whitening
         diagnostics.
+    fit_mask_validator : callable, optional
+        ``validator(fit_mask)`` invoked after the final effective fitting mask
+        is known and before CVXPY expressions are built. Use for structural
+        validity checks whose answer depends on the exact fitted support.
     """
 
     role: str
@@ -80,6 +84,7 @@ class Component:
     valid_mask: np.ndarray | None = None
     parameterization_mask: np.ndarray | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+    fit_mask_validator: Callable[[np.ndarray], None] | None = None
 
 
 def _validate_component_mask(mask, T, *, role, name):
@@ -212,6 +217,12 @@ def make_problem(
                     f"parameterization_mask for role {comp.role!r} must exactly "
                     "match the final fit_mask used by the linking constraint."
                 )
+
+    validation_mask = fit_mask.copy()
+    validation_mask.setflags(write=False)
+    for comp in components:
+        if comp.fit_mask_validator is not None:
+            comp.fit_mask_validator(validation_mask)
 
     # x0: the residual, always index 0.
     x0 = cp.Variable(T, name="residual")

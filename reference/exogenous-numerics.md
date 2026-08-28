@@ -152,9 +152,92 @@ irradiance and temperature would mix their named roles and couple their
 separate penalties unless the entire penalty structure were transformed.
 
 When several blocks genuinely form one component with one declared penalty,
-first audit/whiten each block, then audit/whiten the concatenation, and carry
-the complete composed transform into the original penalty. Do not use composed-
-block whitening as a reason to merge independently interpreted roles.
+use `whiten_basis_by_blocks`. It accepts the blocks themselves rather than
+caller-computed column ranges, preserving their declared order and returning
+the corresponding slices and names.
+
+For raw blocks `B1, ..., Bk`, it first whitens each block independently, then
+whitens the concatenated first-stage designs. If `C_block` is the block-diagonal
+matrix of first-stage transforms and `C_joint` is the joint transform, the
+complete coordinate map is:
+
+```text
+B_raw = [B1 ... Bk]
+C = C_block C_joint
+beta = C gamma
+B_white = B_raw C
+```
+
+The result retains the raw and whitened full-grid bases, block slices and
+names, each first-stage whitening, the joint whitening, and `C`. Apply the
+component's complete original-coordinate penalty through that returned map;
+it need not be an isotropic ridge:
+
+```python
+whitening = whiten_basis_by_blocks(
+    [main_basis, interaction_basis],
+    fit_mask,
+    block_names=("main", "interaction"),
+)
+gamma = cp.Variable(whitening.transform.shape[1])
+beta = whitening.transform @ gamma
+expr = whitening.whitened_basis @ gamma
+loss = weight * cp.sum_squares(penalty_operator @ beta)
+```
+
+Every individual block and the joint concatenation must be full rank on the
+exact mask. A deficiency at either stage raises with stage-specific
+diagnostics; no column is removed and no fallback is used.
+
+An explicit `rank_tolerance` applies to each raw-coordinate block audit. Do not
+reuse that absolute threshold after whitening: the joint matrix is in new
+coordinates with singular values near one. The joint stage therefore derives
+its own scale-appropriate tolerance by default. Pass
+`joint_rank_tolerance=...` only when the second-stage geometry needs an
+explicit threshold of its own.
+
+This primitive is for blocks that genuinely define **one component with one
+declared penalty**. Do not use composed-block whitening as a reason to merge
+independently interpreted roles. In particular, keep two main effects and
+their interaction as three components when they have separate scientific
+meanings or weights.
+
+## Interaction coordinates
+
+`make_interaction_basis(left, right)` forms the row-wise tensor product used by
+`exog_interaction`. With `left.shape[1] == q` and `right.shape[1] == r`, columns
+are ordered with the left index outermost and the right index varying fastest:
+
+```text
+left[0]*right[0], ..., left[0]*right[r-1],
+left[1]*right[0], ..., left[q-1]*right[r-1].
+```
+
+This is the TSGAM-compatible ordering and makes the flat coefficient vector
+equivalent to `coef.reshape(q, r, order="C")`. Interaction whitening is the
+ordinary one-basis case: whiten the complete tensor-product design on the exact
+fit mask, recover the original matrix, and penalize that recovered matrix.
+Both factor bases must be offset-free on the jointly valid rows: augmenting
+either basis with a constant vector must increase its numerical rank. Otherwise
+the tensor product directly inherits an intercept or main-effect direction.
+Uncentered scalar drivers are fine unless the driver itself is constant;
+“offset-free” means no constant direction in the basis span, not zero sample
+mean.
+
+That factor-wise check is not sufficient for interaction-only semantics. For
+example, `left=x` and `right=1/x` are each offset-free but their product is an
+intercept. `exog_interaction` therefore performs a second audit during
+`make_problem`: on the exact final `fit_mask`, the tensor-product span must have
+zero intersection with the span of `[1, left, right]`. This mask is resolved
+after observed rows and every component-validity mask are intersected, so the
+audit also catches lower-order duplication created only by holdouts or missing
+inputs.
+
+Non-finite factor rows are availability failures, not values to impute inside
+the basis builder; they are zero-filled in the design and excluded through its
+validity mask. If finite factors overflow or nonzero factors underflow to an
+exact-zero product when multiplied, rescale them; the builder rejects the
+product before CVXPY sees it.
 
 ## Validate translation out
 
