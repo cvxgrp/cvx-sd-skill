@@ -145,6 +145,20 @@ Positive offsets use past inputs; negative offsets use future inputs. Boundary
 rows and rows whose source driver is unavailable are zero-filled in the finite
 design matrix and excluded through `valid_mask`.
 
+### Keep rollout policy in the caller
+
+`valid_mask` is a numerical support contract, not a calendar policy. Zero-filled
+design rows outside that mask are finite placeholders for CVXPY and must not be
+reported as predictions. A caller applying fitted coefficients to another
+interval must either provide enough source padding for every offset or mark the
+unsupported target rows unavailable.
+
+Keep data acquisition and presentation choices in the consuming application.
+`signaldecomp` computes offset designs and their support from supplied arrays;
+it does not fetch adjacent periods, infer timestamps, or decide whether a
+rollout should pad, drop, return `NaN`, or raise. Estimator and rollout layers
+own those policies and must propagate the component validity mask.
+
 ## Keep independent roles independent
 
 Whiten separate SD components independently. Jointly whitening, for example,
@@ -213,10 +227,10 @@ left[0]*right[0], ..., left[0]*right[r-1],
 left[1]*right[0], ..., left[q-1]*right[r-1].
 ```
 
-This is the TSGAM-compatible ordering and makes the flat coefficient vector
-equivalent to `coef.reshape(q, r, order="C")`. Interaction whitening is the
-ordinary one-basis case: whiten the complete tensor-product design on the exact
-fit mask, recover the original matrix, and penalize that recovered matrix.
+This ordering makes the flat coefficient vector equivalent to
+`coef.reshape(q, r, order="C")`. Interaction whitening is the ordinary
+one-basis case: whiten the complete tensor-product design on the exact fit mask,
+recover the original matrix, and penalize that recovered matrix.
 Both factor bases must be offset-free on the jointly valid rows: augmenting
 either basis with a constant vector must increase its numerical rank. Otherwise
 the tensor product directly inherits an intercept or main-effect direction.

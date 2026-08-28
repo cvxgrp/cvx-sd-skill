@@ -276,8 +276,11 @@ Unlike time-based components, these are functions of an external covariate `z`
 
 Offsets satisfy `shifted[t] = z[t - offset]`: positive uses past values and
 negative uses future values. Undefined boundary/source rows are excluded from
-`built["fit_mask"]`. To translate TSGAM's currently implemented `lags`, negate
-their signs: `offsets = tuple(-lag for lag in lags)`.
+`built["fit_mask"]`.
+
+Sign conventions vary across libraries. Translate from the index equation,
+not the word “lag”: if another API defines `shifted[t] = z[t + lag]`, negate
+its signs with `offsets = tuple(-lag for lag in lags)`.
 
 Whitening is a numerical reparameterization, not a support or rank repair. It
 requires the exact fitting mask, rejects deficient bases, and transforms every
