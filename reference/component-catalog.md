@@ -112,6 +112,47 @@ by the difference length; L2² expresses total global roughness and is not
 length-normalized. This keeps locally sparse weights comparable across record
 lengths without changing the meaning of global smoothness.
 
+## Grouped/block components
+
+These components assign one coefficient to each declared group and expand it
+back to the sample grid with a one-hot design. The grouping is caller-owned:
+pass a length-`T` label vector or an explicit `T x G` mapping matrix. Timestamp
+frequency inference does not belong in the builders.
+
+- **`make_group_basis(groups=None, *, mapping=None, group_order=None)`** builds
+  the shared design. Label columns follow explicit `group_order` or first
+  appearance. Missing labels and all-zero mapping rows remain finite zeros but
+  are excluded through the component-validity mask. Monotonicity and
+  differences always follow this declared order, never implicitly sorted
+  labels.
+- **`grouped_trend(..., weight=0.0, monotonic=None, baseline=None,
+  role="trend")`** is constant within each group and penalizes squared first
+  differences between ordered group values. Set `monotonic` to `"increasing"`
+  or `"decreasing"`; set `baseline=value` to hard-anchor the first ordered
+  group. Aux `<role>_group_values` exposes the ordered coefficients.
+
+  ```python
+  expr = group_design @ group_values
+  loss = weight * cp.sum_squares(cp.diff(group_values))
+  constraints = [group_values[0] == baseline]  # when requested
+  ```
+
+- **`grouped_sparse(..., weight=..., role="grouped_sparse")`** represents a
+  few anomalous groups whose correction is constant for every sample in the
+  group. Its L1 penalty follows the package's local sparsity convention and is
+  normalized per group, not per sample. Aux `<role>_group_values` exposes the
+  ordered corrections.
+
+  ```python
+  expr = group_design @ group_values
+  loss = weight / n_groups * cp.norm1(group_values)
+  ```
+
+These are distinct from `pwc_trend`: a PWC trend discovers sample-level change
+points, while grouped components use a grouping supplied by the caller. They
+are also distinct from timestamp logic—the caller decides whether a group is a
+day, week, batch, device state, or something else.
+
 ## Multiperiodic (strictly periodic is a special case)
 
 - **`multiperiodic(periods, num_harmonics=6, weight=0.1, role="periodic")`** — a
@@ -159,25 +200,94 @@ leap years, harmonics-per-scale, and the trend↔seasonal confound.
 Unlike time-based components, these are functions of an external covariate `z`
 (time-aligned, `len(z) == T`). The covariate is captured at construction.
 
-- **`exog_linear(z, weight=0.0, role="exog")`** — a linear response `beta * z`
-  (e.g. load proportional to irradiance). Aux `<role>_beta` is the scalar
-  coefficient. Belief: "the signal responds linearly to `z`."
+- **`exog_linear(z, weight=0.0, role="exog", *, offsets=(0,),
+  lag_smooth_weight=0.0)`** — a linear response to one or more ordered offsets
+  of `z` (e.g. load proportional to current and past irradiance). Aux
+  `<role>_beta` is scalar for one offset and a vector for several. Belief: "the
+  signal responds linearly to `z`."
 
   ```python
-  expr = beta * z                 # linear response to covariate z
-  loss = weight * cp.square(beta) # optional ridge on the coefficient
+  Z = make_offset_basis(z, offsets).design
+  expr = Z @ beta
+  loss = weight * cp.sum_squares(beta)
+  loss += lag_smooth_weight * cp.sum_squares(cp.diff(beta))
   ```
-- **`exog_spline(z, n_knots=10, knots=None, weight=0.01, role="exog")`** — a
-  smooth, possibly nonlinear response via a natural cubic spline `H(z) @ coef`
-  (linear beyond the boundary knots; constant column dropped). `weight` is a
-  ridge penalty controlling smoothness; more knots = more flexible. Aux
-  `<role>_coef`. Belief: "the signal responds smoothly but nonlinearly to `z`"
-  (e.g. a U-shaped load-vs-temperature curve).
+- **`exog_spline(z, n_knots=10, knots=None, weight=0.01, role="exog", *,
+  offsets=(0,), lag_smooth_weight=0.0, whiten=False, fit_mask=None,
+  rank_tolerance=None, knot_policy=None)`** — a smooth, possibly nonlinear
+  response via natural-cubic spline blocks (linear beyond the boundary knots;
+  constant column dropped). `weight` is a ridge penalty on original basis
+  coefficients; `lag_smooth_weight` smooths those coefficients across ordered
+  offsets. Aux `<role>_coef` always exposes original coordinates. With opt-in
+  whitening, `<role>_numerical_coef` exposes solver coordinates separately.
+  Belief: "the signal responds smoothly but nonlinearly to `z`" (e.g. a
+  U-shaped load-vs-temperature curve).
 
   ```python
   expr = H(z) @ coef                   # natural cubic spline basis in z (const col dropped)
   loss = weight * cp.sum_squares(coef) # ridge -> smoothness
   ```
+
+- **`exog_interaction(left_basis, right_basis, weight=0.0,
+  role="interaction", *, factor_names=None, whiten=False, fit_mask=None,
+  rank_tolerance=None)`** — an independent tensor-product interaction between
+  two current-index exogenous bases. If the factors have `q` and `r` columns,
+  the component has every one of their `q*r` column products. Aux
+  `<role>_coef` is the original `q x r` coefficient matrix. Main effects are
+  not implicit: add them as separate components with separate roles and
+  penalties when the model requires them. **Both input bases must be
+  offset-free:** the constant vector cannot lie in either basis's column space
+  on the jointly valid rows. This is stronger than merely omitting a column
+  named “intercept.” For example, do not pass `[1, x]` and `[1, z]`; their
+  tensor product contains an intercept and both main effects, duplicating
+  separately declared roles and making coefficient allocation penalty-
+  dependent.
+
+  Offset-free factors are necessary but not sufficient: `x` and `1/x` each
+  pass that individual check while their product is an intercept. During
+  `make_problem`, the component therefore audits the complete interaction span
+  against `[intercept, left_basis, right_basis]` on the **final effective
+  `fit_mask`**. This also catches a factor that becomes constant only after
+  holdouts or another component's unavailable rows are removed. Any shared
+  direction raises before CVXPY construction.
+
+  ```python
+  components = [
+      exog_linear(irradiance, role="irradiance_main"),
+      exog_linear(temperature, role="temperature_main"),
+      exog_interaction(
+          irradiance,
+          temperature,
+          weight=1e-2,
+          role="weather_interaction",
+          factor_names=("irradiance", "temperature"),
+      ),
+  ]
+  ```
+
+  `make_interaction_basis(left_basis, right_basis)` exposes the pure NumPy
+  design operation. Columns are left-major with the right column varying
+  fastest, matching `coef.reshape(q, r, order="C")`. A factor row containing
+  any non-finite entry becomes a finite all-zero design row and is excluded by
+  the component-validity mask. A non-finite product of otherwise finite factor
+  entries, or an exact-zero product from two nonzero entries, raises immediately
+  with a request to rescale the inputs. Opt-in whitening preserves the original
+  Frobenius ridge penalty and requires the exact final `fit_mask`.
+
+Offsets satisfy `shifted[t] = z[t - offset]`: positive uses past values and
+negative uses future values. Undefined boundary/source rows are excluded from
+`built["fit_mask"]`.
+
+Sign conventions vary across libraries. Translate from the index equation,
+not the word “lag”: if another API defines `shifted[t] = z[t + lag]`, negate
+its signs with `offsets = tuple(-lag for lag in lags)`.
+
+Whitening is a numerical reparameterization, not a support or rank repair. It
+requires the exact fitting mask, rejects deficient bases, and transforms every
+penalty through the inverse coordinate map. Determine knots from training data
+only. Read [exogenous-numerics.md](exogenous-numerics.md) before using spline
+or interaction whitening, support policies, multiple offsets, or composed
+basis blocks.
 
 ## Wrappers: adding constraints to any component
 

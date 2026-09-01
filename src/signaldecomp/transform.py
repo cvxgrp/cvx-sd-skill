@@ -93,9 +93,12 @@ def recover_components(out, log_transform=False, index=None):
     T = residual.shape[0]
 
     structural = {}
-    for role, val in values.items():
-        if role == "residual":
-            continue
+    if "component_metadata" in out:
+        role_names = out["component_metadata"]
+    else:
+        role_names = (role for role in values if role != "residual")
+    for role in role_names:
+        val = values[role]
         arr = np.asarray(val, dtype=float) if np.ndim(val) else None
         if arr is not None and arr.shape == (T,):
             structural[role] = arr

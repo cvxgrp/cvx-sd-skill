@@ -36,6 +36,9 @@ Read the example closest to the task:
   weekly gasoline prices; compares linear, smooth, PWL, and PWC trend claims
   using holdout selection, structural complexity, residual inspection, and
   interactive regularization paths.
+- [`examples/lagged_exogenous_response.py`](examples/lagged_exogenous_response.py)
+  — compact synthetic implementation example for ordered exogenous offsets,
+  exact fit-mask construction, spline whitening, and held-out scoring.
 
 ## The substrate
 
@@ -45,9 +48,10 @@ Preserve four invariants:
   `φk`; minimize their sum.
 - **x0 is always the residual.** Append structural components as `x1, x2, …`,
   but address every solved component by **role**, never by index.
-- **The mask handles missing data.** Impose `y = Σ xk` only at observed entries.
-  Exclude missing, held-out, and unobserved grid points through the same mask;
-  the summed structural components impute them.
+- **The mask handles unavailable data.** `built["mask"]` marks finite `y`, each
+  component can declare input availability, and `built["fit_mask"]` is their
+  intersection. Impose `y = Σ xk` only there; the summed structural components
+  impute missing, held-out, and input-unavailable rows.
 - **Physical time lives in Δ.** `y` is a 1-D vector on a regular grid; a scalar
   `Δ` ties samples to physical time. Express periods in the same unit and
   convert to samples as late as possible.
@@ -125,7 +129,7 @@ from signaldecomp import (
     SECONDS_PER_DAY, SECONDS_PER_YEAR,
 )
 
-y = ...          # load and prepare data: 1-D array, NaN where missing
+y = ...          # load and prepare data: 1-D array, non-finite where missing
 delta = SECONDS_PER_DAY  # daily samples; periods scale by delta
 # (raw timestamps? standardize_time_axis(df) returns y, delta, and an index)
 
@@ -171,6 +175,10 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   use `Timedelta.total_seconds()`, never `.seconds`.
 - **Do not holdout-tune a structural knob.** If a knob changes component shape
   without moving the reconstruction, judge the component by looking.
+- **Do not whiten unsupported spline geometry.** Build knots from training
+  support, require full rank on the exact fitting mask, and preserve the
+  original coefficient penalty. See
+  [exogenous-numerics.md](reference/exogenous-numerics.md).
 - **Name the uncertainty target.** Bootstrapping a selected, frozen model gives
   conditional uncertainty; it does not include variation from preprocessing,
   model specification, tuning, or selection.
@@ -181,6 +189,9 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   masked linking, DCP as the verifiable target, composing bespoke components.
 - [component-catalog.md](reference/component-catalog.md) — convex component
   vocabulary; excluded non-convex classes and their relaxations.
+- [exogenous-numerics.md](reference/exogenous-numerics.md) — support-aware
+  spline construction, rank audits, exact penalty-preserving whitening, and
+  offset-mask semantics.
 - [diagnostics.md](reference/diagnostics.md) — numerical inspection:
   periodograms, folds, variance explained, residual and driver checks.
 - [implementation.md](reference/implementation.md) — reproducible builds,

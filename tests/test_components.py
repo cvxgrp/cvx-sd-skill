@@ -162,3 +162,14 @@ def test_builders_expose_documented_aux_keys():
         assert out["status"] in _OPTIMAL
         for k in keys:
             assert k in out["values"], f"missing aux key {k}"
+
+
+def test_bounded_preserves_component_masks_and_metadata():
+    from signaldecomp import bounded, exog_linear
+
+    z = np.arange(12.0)
+    inner = exog_linear(z, offsets=(1,), role="driver")
+    wrapped = bounded(inner, lower=-100.0, upper=100.0)
+    assert np.array_equal(wrapped.valid_mask, inner.valid_mask)
+    assert wrapped.parameterization_mask is inner.parameterization_mask
+    assert wrapped.metadata is inner.metadata

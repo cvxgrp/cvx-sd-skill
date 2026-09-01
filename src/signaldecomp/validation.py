@@ -47,9 +47,14 @@ def _reconstruction(out):
     resid = out["values"]["residual"]
     T = resid.shape[0]
     recon = np.zeros(T)
-    for role, val in out["values"].items():
-        if role == "residual":
-            continue
+    if "component_metadata" in out:
+        role_names = out["component_metadata"]
+    else:
+        role_names = (
+            role for role in out["values"] if role != "residual"
+        )
+    for role in role_names:
+        val = out["values"][role]
         arr = np.asarray(val)
         if arr.shape == (T,):
             recon = recon + arr
@@ -69,16 +74,17 @@ def bootstrap_ci(
 ):
     """Moving-block bootstrap confidence intervals for extracted quantities.
 
-    Resamples the observed residuals in contiguous blocks, adds them back to the
+    Resamples fitted residuals in contiguous blocks, adds them back to the
     structural reconstruction, refits, and re-extracts -- building an empirical
-    distribution for each quantity the extractor returns.
+    distribution for each quantity the extractor returns. Observed rows that
+    are unavailable to a component are preserved but are not resampled.
 
     Parameters
     ----------
     y : numpy.ndarray, shape (T,)
-        The observed signal (NaN where missing). The mask is preserved across
-        resamples: masked entries stay NaN so each refit sees the same missing
-        pattern.
+        The observed signal (non-finite where missing). The mask is preserved
+        across resamples: unavailable entries stay NaN so each refit sees the
+        same missing pattern.
     build_fn : callable
         build_fn(y) -> built; rebuilds the problem on a resampled signal.
     extractor : callable
@@ -111,10 +117,8 @@ def bootstrap_ci(
     if block_size < 1:
         raise ValueError(f"block_size must be >= 1; got {block_size}")
     y = np.asarray(y, dtype=float)
-    mask = ~np.isnan(y)
-    valid_idx = np.where(mask)[0]
-    M = valid_idx.size
-    if M == 0:
+    observed_mask = np.isfinite(y)
+    if not observed_mask.any():
         raise ValueError("y has no observed entries to bootstrap.")
 
     def _solve(sig):
@@ -122,6 +126,13 @@ def bootstrap_ci(
 
     # Point solve: the residual and reconstruction we resample around.
     point_out = _solve(y)
+    fit_mask = np.asarray(point_out.get("fit_mask", observed_mask))
+    if fit_mask.dtype != np.bool_ or fit_mask.shape != y.shape:
+        raise ValueError("the built problem returned an invalid fit_mask.")
+    valid_idx = np.where(fit_mask)[0]
+    M = valid_idx.size
+    if M == 0:
+        raise ValueError("the built problem has no fitted entries to bootstrap.")
     resid_full = point_out["values"]["residual"]
     recon_full = _reconstruction(point_out)
     res_valid = resid_full[valid_idx]
@@ -134,9 +145,9 @@ def bootstrap_ci(
     for _ in range(n_resamples):
         starts = rng.integers(0, M - L + 1, size=n_blocks)
         resampled = np.concatenate([res_valid[s : s + L] for s in starts])[:M]
-        y_star = recon_full.copy()
+        y_star = y.copy()
         y_star[valid_idx] = recon_full[valid_idx] + resampled
-        y_star[~mask] = np.nan
+        y_star[~observed_mask] = np.nan
         try:
             out_b = _solve(y_star)
         except Exception:
@@ -162,13 +173,13 @@ def valid_endpoints(y, min_window, step):
     """Window lengths for expanding-window analysis, snapped to observed samples.
 
     Nominal lengths ``range(min_window, T+1, step)`` (plus the full length) are
-    each snapped *backward* to end on the nearest observed (non-NaN) sample,
+    each snapped *backward* to end on the nearest finite sample,
     then deduplicated. This guarantees every window ends on real data.
 
     Parameters
     ----------
     y : numpy.ndarray, shape (T,)
-        The signal (NaN where missing).
+        The signal (non-finite where missing).
     min_window : int
         Minimum window length in samples. REQUIRED -- choose from the data's
         time scales (e.g. at least one dominant period).
@@ -182,9 +193,9 @@ def valid_endpoints(y, min_window, step):
     """
     y = np.asarray(y, dtype=float)
     T = y.shape[0]
-    valid_ix = np.where(~np.isnan(y))[0]
+    valid_ix = np.where(np.isfinite(y))[0]
     if valid_ix.size == 0:
-        raise ValueError("y contains no observed (non-NaN) samples.")
+        raise ValueError("y contains no observed finite samples.")
     nominal = np.arange(min_window, T + 1, step)
     if nominal.size == 0 or nominal[-1] != T:
         nominal = np.append(nominal, T)
@@ -301,11 +312,16 @@ def expanding_window_stability(
 
     # Which roles to snapshot: full-length structural values (exclude residual).
     def _structural_roles(out):
+        T_out = out["values"]["residual"].shape[0]
+        if "component_metadata" in out:
+            role_names = out["component_metadata"]
+        else:
+            role_names = (r for r in out["values"] if r != "residual")
         return [
-            r
-            for r, v in out["values"].items()
-            if r != "residual" and np.ndim(v) and np.asarray(v).shape == (len(v),)
-            and np.asarray(v).shape[0] == out["values"]["residual"].shape[0]
+            role
+            for role in role_names
+            if np.ndim(out["values"][role])
+            and np.asarray(out["values"][role]).shape == (T_out,)
         ]
 
     first_ok = next((o for o in outs if o is not None), None)
@@ -343,7 +359,7 @@ def expanding_window_stability(
         for i in range(F - 1):
             a = snap[i, : windows[i]]
             b = snap[i + 1, : windows[i]]
-            valid = ~(np.isnan(a) | np.isnan(b))
+            valid = np.isfinite(a) & np.isfinite(b)
             if valid.sum() < 2:
                 continue
             diff = b[valid] - a[valid]
@@ -381,7 +397,7 @@ def expanding_window_stability(
 
     converged_at = {}
     for k, arr in history.items():
-        finite = arr[~np.isnan(arr)]
+        finite = arr[np.isfinite(arr)]
         if finite.size == 0:
             converged_at[k] = None
             continue
@@ -445,7 +461,10 @@ def holdout_select(
     dict
         - ``"scores"`` : dict name -> held-out error (NaN if that model failed).
         - ``"best"``   : name of the lowest-error model (None if all failed).
-        - ``"holdout_index"`` : the integer indices held out and scored.
+        - ``"holdout_index"`` : held-out indices scored by every successful
+          candidate after intersecting component availability.
+        - ``"requested_holdout_index"`` : all observed indices initially held
+          out, before the common-availability intersection.
         - ``"metric"`` : the metric used.
 
     Notes
@@ -458,14 +477,16 @@ def holdout_select(
         raise ValueError(f"metric must be 'rmse' or 'mae'; got {metric!r}")
     y = np.asarray(y, dtype=float)
     T = y.shape[0]
-    observed = np.where(~np.isnan(y))[0]
+    observed = np.where(np.isfinite(y))[0]
     if observed.size == 0:
         raise ValueError("y has no observed entries to hold out.")
 
     if holdout_slice is not None:
-        holdout_index = np.arange(T)[holdout_slice]
+        requested_holdout_index = np.arange(T)[holdout_slice]
         # Only score entries that were actually observed.
-        holdout_index = holdout_index[~np.isnan(y[holdout_index])]
+        requested_holdout_index = requested_holdout_index[
+            np.isfinite(y[requested_holdout_index])
+        ]
     else:
         if not 0.0 < holdout_fraction < 1.0:
             raise ValueError(
@@ -473,32 +494,47 @@ def holdout_select(
             )
         n_hold = max(1, int(round(holdout_fraction * observed.size)))
         start = (observed.size - n_hold) // 2  # centre block, in observed space
-        holdout_index = observed[start : start + n_hold]
-    if holdout_index.size == 0:
+        requested_holdout_index = observed[start : start + n_hold]
+    if requested_holdout_index.size == 0:
         raise ValueError("the held-out block covers no observed entries.")
 
     y_train = y.copy()
-    y_train[holdout_index] = np.nan  # mask the held-out truth
-    truth = y[holdout_index]
+    y_train[requested_holdout_index] = np.nan  # mask the held-out truth
 
     def _solve(sig):
         return solve(build_fn(sig)) if solver is None else solve(build_fn(sig), solver=solver)
 
-    scores = {}
+    solved = {}
+    scores = {name: float("nan") for name in candidates}
     for name, build_fn in candidates.items():
         try:
             out = _solve(y_train)
-            if out["status"] not in _OPTIMAL:
-                scores[name] = float("nan")
-                continue
+            if out["status"] in _OPTIMAL:
+                solved[name] = out
+        except Exception:
+            pass
+
+    common_component_mask = np.ones(T, dtype=bool)
+    for out in solved.values():
+        component_mask = np.asarray(
+            out.get("component_mask", np.ones(T, dtype=bool))
+        )
+        if component_mask.dtype != np.bool_ or component_mask.shape != (T,):
+            raise ValueError("a built candidate returned an invalid component_mask.")
+        common_component_mask &= component_mask
+    holdout_index = requested_holdout_index[
+        common_component_mask[requested_holdout_index]
+    ]
+
+    if holdout_index.size:
+        truth = y[holdout_index]
+        for name, out in solved.items():
             recon = _reconstruction(out)
             err = recon[holdout_index] - truth
             if metric == "rmse":
                 scores[name] = float(np.sqrt(np.mean(err**2)))
             else:
                 scores[name] = float(np.mean(np.abs(err)))
-        except Exception:
-            scores[name] = float("nan")
 
     finite = {k: v for k, v in scores.items() if np.isfinite(v)}
     best = min(finite, key=finite.get) if finite else None
@@ -506,5 +542,6 @@ def holdout_select(
         "scores": scores,
         "best": best,
         "holdout_index": holdout_index,
+        "requested_holdout_index": requested_holdout_index,
         "metric": metric,
     }

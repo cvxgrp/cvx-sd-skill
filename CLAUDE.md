@@ -35,7 +35,15 @@ an opaque implementation.
 - x0 is the residual; address structural components by role, never index.
 - The default solver is `"CLARABEL"`; `solve(..., verify_dcp=True)` is the
   default.
-- Missing data uses boolean indexing of the consistency equality.
+- `built["mask"]` marks finite `y`; `built["component_mask"]` intersects all
+  component-input availability; `built["fit_mask"]` is their intersection and
+  is the exact boolean index used by the consistency equality.
+- Fitted preprocessing such as spline knots or whitening must use exactly
+  `fit_mask`. Components retain that parameterization mask so `make_problem`
+  can reject holdout leakage or a differently conditioned operator.
+- A component may use `fit_mask_validator` for structural checks that depend on
+  the effective fitted support. It receives a read-only snapshot of the final
+  mask after observation and all component-validity masks are intersected.
 - `solve` accepts solver keyword arguments and treats `optimal` and
   `optimal_inaccurate` as successful. Test contracts with meaningful tolerances,
   not one solver's exact array.
@@ -85,6 +93,13 @@ uv run --group examples marimo check examples/<notebook>.py
 
 `marimo check` verifies cell ownership and dataflow, not runtime results; run
 important numeric paths in a live kernel as well.
+
+Run plain Python examples directly, including the exogenous integration
+control:
+
+```bash
+uv run python examples/lagged_exogenous_response.py
+```
 
 ## Private notes
 

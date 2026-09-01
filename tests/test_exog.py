@@ -10,6 +10,7 @@ from signaldecomp import (
     smooth_trend,
     solve,
 )
+from signaldecomp.spline import default_knots, spline_support_diagnostics
 
 _OPTIMAL = ("optimal", "optimal_inaccurate")
 
@@ -79,3 +80,25 @@ def test_exog_length_mismatch_raises():
     z = rng.standard_normal(50)  # wrong length
     with pytest.raises(ValueError, match="expected"):
         make_problem(y, components=[exog_linear(z, role="temp")])
+
+
+def test_default_knots_use_only_explicit_fitting_support():
+    z = np.linspace(0.0, 1.0, 100)
+    z[-1] = 1000.0
+    fit_mask = np.ones(100, dtype=bool)
+    fit_mask[-1] = False
+    knots = default_knots(z, 5, fit_mask=fit_mask)
+    assert knots[-1] < 2.0
+
+
+def test_spline_support_diagnostics_report_counts_and_rank():
+    z = np.linspace(-2.0, 2.0, 200)
+    fit_mask = np.ones(200, dtype=bool)
+    fit_mask[::9] = False
+    knots = np.linspace(-1.5, 1.5, 6)
+    diagnostics = spline_support_diagnostics(z, knots, fit_mask)
+    assert diagnostics.n_fit == fit_mask.sum()
+    assert diagnostics.below_boundary_count > 0
+    assert diagnostics.above_boundary_count > 0
+    assert diagnostics.interval_counts.sum() < diagnostics.n_fit
+    assert diagnostics.basis.numerical_rank == len(knots) - 1

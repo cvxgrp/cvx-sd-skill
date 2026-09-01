@@ -24,7 +24,11 @@ from __future__ import annotations
 import cvxpy as cp
 import numpy as np
 
+from signaldecomp.basis_numerics import whiten_basis
 from signaldecomp.decompose import Component
+from signaldecomp.exogenous import make_offset_basis, offset_source_mask
+from signaldecomp.grouped import make_group_basis
+from signaldecomp.interactions import make_interaction_basis
 from signaldecomp.periodic import multiperiodic  # noqa: F401  (re-exported)
 from signaldecomp.spline import default_knots, make_spline_basis
 
@@ -167,7 +171,128 @@ def sparse(weight, role="sparse"):
     return comp
 
 
-def exog_linear(z, weight=0.0, role="exog"):
+# Grouped formulations adapted from TSGAM.
+# Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Nimish Telang
+def grouped_trend(
+    groups=None,
+    *,
+    mapping=None,
+    group_order=None,
+    weight=0.0,
+    monotonic=None,
+    baseline=None,
+    role="trend",
+):
+    """Group-constant trend with smoothing and optional shape constraints.
+
+    Group coefficients follow ``group_order`` when supplied and first label
+    appearance otherwise. ``monotonic`` may be ``"increasing"`` or
+    ``"decreasing"`` in that declared order. ``baseline=value`` anchors the
+    first ordered group to that value.
+    """
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    if monotonic not in (None, "increasing", "decreasing"):
+        raise ValueError(
+            "monotonic must be None, 'increasing', or 'decreasing'."
+        )
+    if baseline is not None:
+        baseline = float(baseline)
+        if not np.isfinite(baseline):
+            raise ValueError("baseline must be finite when provided.")
+
+    group_basis = make_group_basis(
+        groups,
+        mapping=mapping,
+        group_order=group_order,
+    )
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=group_basis.valid_mask,
+        metadata={"group_basis": group_basis},
+    )
+
+    def build(T):
+        if group_basis.design.shape[0] != T:
+            raise ValueError(
+                f"group design for role {role!r} has length "
+                f"{group_basis.design.shape[0]}, expected {T}."
+            )
+        group_values = cp.Variable(
+            group_basis.n_groups, name=f"{role}_group_values"
+        )
+        comp.aux[f"{role}_group_values"] = group_values
+        expr = group_basis.design @ group_values
+        loss = (
+            weight * cp.sum_squares(cp.diff(group_values))
+            if group_basis.n_groups > 1 and weight
+            else 0
+        )
+        constraints = []
+        if baseline is not None:
+            constraints.append(group_values[0] == baseline)
+        if group_basis.n_groups > 1 and monotonic == "increasing":
+            constraints.append(cp.diff(group_values) >= 0)
+        elif group_basis.n_groups > 1 and monotonic == "decreasing":
+            constraints.append(cp.diff(group_values) <= 0)
+        return expr, loss, constraints
+
+    comp.build = build
+    return comp
+
+
+def grouped_sparse(
+    groups=None,
+    *,
+    mapping=None,
+    group_order=None,
+    weight,
+    role="grouped_sparse",
+):
+    """Group-constant sparse correction with an L1 group-value penalty."""
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    group_basis = make_group_basis(
+        groups,
+        mapping=mapping,
+        group_order=group_order,
+    )
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=group_basis.valid_mask,
+        metadata={"group_basis": group_basis},
+    )
+
+    def build(T):
+        if group_basis.design.shape[0] != T:
+            raise ValueError(
+                f"group design for role {role!r} has length "
+                f"{group_basis.design.shape[0]}, expected {T}."
+            )
+        group_values = cp.Variable(
+            group_basis.n_groups, name=f"{role}_group_values"
+        )
+        comp.aux[f"{role}_group_values"] = group_values
+        expr = group_basis.design @ group_values
+        loss = weight / group_basis.n_groups * cp.norm1(group_values)
+        return expr, loss, []
+
+    comp.build = build
+    return comp
+
+
+def exog_linear(
+    z,
+    weight=0.0,
+    role="exog",
+    *,
+    offsets=(0,),
+    lag_smooth_weight=0.0,
+):
     """Linear response to an exogenous covariate: ``beta * z``.
 
     Models a signal contribution proportional to an external, time-aligned
@@ -184,6 +309,12 @@ def exog_linear(z, weight=0.0, role="exog"):
         Optional ridge penalty on the coefficient magnitude (0 = unpenalized).
     role : str
         Component role name.
+    offsets : iterable of int
+        Ordered sample offsets with ``shifted[t] = z[t - offset]``. Positive
+        values use past observations; negative values use future observations.
+    lag_smooth_weight : float
+        Squared first-difference penalty across coefficients in the supplied
+        offset order. Has no effect for one offset.
 
     Returns
     -------
@@ -191,7 +322,15 @@ def exog_linear(z, weight=0.0, role="exog"):
         With ``aux`` exposing the scalar coefficient under ``"<role>_beta"``.
     """
     z = np.asarray(z, dtype=float)
-    comp = Component(role=role, build=None)
+    if z.ndim != 1:
+        raise ValueError(f"z must be 1-D; got shape {z.shape}.")
+    offset_basis = make_offset_basis(z, offsets)
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=offset_basis.valid_mask,
+        metadata={"offsets": offset_basis.offsets},
+    )
 
     def build(T):
         if z.shape != (T,):
@@ -199,17 +338,37 @@ def exog_linear(z, weight=0.0, role="exog"):
                 f"exogenous covariate for role {role!r} has shape {z.shape}, "
                 f"expected ({T},) to match the signal length."
             )
-        beta = cp.Variable(name=f"{role}_beta")
+        n_offsets = len(offset_basis.offsets)
+        beta = (
+            cp.Variable(name=f"{role}_beta")
+            if n_offsets == 1
+            else cp.Variable(n_offsets, name=f"{role}_beta")
+        )
         comp.aux[f"{role}_beta"] = beta
-        expr = beta * z
-        loss = weight * cp.square(beta)
+        expr = offset_basis.design @ cp.reshape(beta, (n_offsets,), order="F")
+        loss = weight * cp.sum_squares(beta)
+        if n_offsets > 1 and lag_smooth_weight:
+            loss += lag_smooth_weight * cp.sum_squares(cp.diff(beta))
         return expr, loss, []
 
     comp.build = build
     return comp
 
 
-def exog_spline(z, n_knots=10, knots=None, weight=1e-2, role="exog"):
+def exog_spline(
+    z,
+    n_knots=10,
+    knots=None,
+    weight=1e-2,
+    role="exog",
+    *,
+    offsets=(0,),
+    lag_smooth_weight=0.0,
+    whiten=False,
+    fit_mask=None,
+    rank_tolerance=None,
+    knot_policy=None,
+):
     """Nonlinear response to an exogenous covariate via a natural cubic spline.
 
     Models a smooth, possibly nonlinear dependence of the signal on an external,
@@ -232,6 +391,25 @@ def exog_spline(z, n_knots=10, knots=None, weight=1e-2, role="exog"):
         Ridge penalty on the spline coefficients (controls smoothness).
     role : str
         Component role name.
+    offsets : iterable of int
+        Ordered sample offsets with ``shifted[t] = z[t - offset]``. Positive
+        values use past observations; negative values use future observations.
+    lag_smooth_weight : float
+        Squared first-difference penalty across coefficient blocks in supplied
+        offset order.
+    whiten : bool
+        If True, exactly whiten the full-rank offset design on ``fit_mask``.
+        The modeled function space and original-coordinate penalties are
+        preserved. Rank-deficient designs raise.
+    fit_mask : numpy.ndarray, optional
+        Exact boolean rows used in the problem's linking constraint. Required
+        for whitening. When provided, it also limits fitted knot preprocessing
+        and must match the final problem ``fit_mask``.
+    rank_tolerance : float, optional
+        Explicit singular-value threshold for whitening rank eligibility.
+    knot_policy : callable, optional
+        ``knot_policy(z_fit, n_knots) -> knots`` used when explicit ``knots``
+        are absent. The default remains evenly spaced training extrema.
 
     Returns
     -------
@@ -239,10 +417,84 @@ def exog_spline(z, n_knots=10, knots=None, weight=1e-2, role="exog"):
         With ``aux`` exposing the coefficient vector under ``"<role>_coef"``.
     """
     z = np.asarray(z, dtype=float)
-    resolved_knots = (
-        np.asarray(knots, dtype=float) if knots is not None else default_knots(z, n_knots)
+    if z.ndim != 1:
+        raise ValueError(f"z must be 1-D; got shape {z.shape}.")
+    parameterization_mask = None
+    if fit_mask is not None:
+        parameterization_mask = np.array(fit_mask, copy=True)
+        if parameterization_mask.dtype != np.bool_:
+            raise TypeError("fit_mask must have boolean dtype.")
+        if parameterization_mask.shape != z.shape:
+            raise ValueError(
+                f"fit_mask has shape {parameterization_mask.shape}, expected {z.shape}."
+            )
+        if not parameterization_mask.any():
+            raise ValueError("fit_mask selects no rows.")
+        parameterization_mask.setflags(write=False)
+    if whiten and parameterization_mask is None:
+        raise ValueError("fit_mask is required when whiten=True.")
+    if knot_policy is not None and parameterization_mask is None:
+        raise ValueError("fit_mask is required when knot_policy is provided.")
+    if knots is not None and knot_policy is not None:
+        raise ValueError("pass either explicit knots or knot_policy, not both.")
+    driver_offsets = make_offset_basis(z, offsets)
+    if parameterization_mask is not None and np.any(
+        parameterization_mask & ~driver_offsets.valid_mask
+    ):
+        raise ValueError("fit_mask includes rows where an offset driver is unavailable.")
+    support_mask = (
+        offset_source_mask(parameterization_mask, driver_offsets.offsets)
+        if parameterization_mask is not None
+        else None
     )
-    comp = Component(role=role, build=None)
+    if knots is not None:
+        resolved_knots = np.asarray(knots, dtype=float)
+        knot_source = "explicit"
+    elif knot_policy is not None:
+        z_fit = z[support_mask & np.isfinite(z)]
+        if z_fit.size == 0:
+            raise ValueError("no finite fitted z values are available for knot_policy.")
+        resolved_knots = np.asarray(knot_policy(z_fit, n_knots), dtype=float)
+        knot_source = "training-policy"
+    else:
+        resolved_knots = default_knots(z, n_knots, fit_mask=support_mask)
+        knot_source = (
+            "training-extrema" if support_mask is not None else "all-finite-extrema"
+        )
+
+    base = make_spline_basis(z, resolved_knots, include_offset=False)
+    offset_basis = make_offset_basis(base, driver_offsets.offsets)
+    if parameterization_mask is not None and np.any(
+        parameterization_mask & ~offset_basis.valid_mask
+    ):
+        raise ValueError("fit_mask includes rows where the offset spline basis is unavailable.")
+
+    whitening = None
+    design = offset_basis.design
+    if whiten:
+        whitening = whiten_basis(
+            design,
+            parameterization_mask,
+            rank_tolerance=rank_tolerance,
+            context=f"spline component {role!r}",
+        )
+        design = whitening.whitened_basis
+
+    metadata = {
+        "knots": resolved_knots.copy(),
+        "offsets": offset_basis.offsets,
+        "support_mask": support_mask.copy() if support_mask is not None else None,
+        "knot_source": knot_source,
+        "extrapolation": "natural-linear",
+        "whitening": whitening,
+    }
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=offset_basis.valid_mask,
+        parameterization_mask=parameterization_mask,
+        metadata=metadata,
+    )
 
     def build(T):
         if z.shape != (T,):
@@ -250,13 +502,193 @@ def exog_spline(z, n_knots=10, knots=None, weight=1e-2, role="exog"):
                 f"exogenous covariate for role {role!r} has shape {z.shape}, "
                 f"expected ({T},) to match the signal length."
             )
-        H = make_spline_basis(z, resolved_knots, include_offset=False)
-        coef = cp.Variable(H.shape[1], name=f"{role}_coef")
-        comp.aux[f"{role}_coef"] = coef
-        expr = H @ coef
+        basis_width = offset_basis.block_width
+        n_offsets = len(offset_basis.offsets)
+        n_coefficients = basis_width * n_offsets
+        coefficient_name = (
+            f"{role}_numerical_coef" if whitening is not None else f"{role}_coef"
+        )
+        numerical_coef = cp.Variable(n_coefficients, name=coefficient_name)
+        original_coef = (
+            whitening.transform @ numerical_coef
+            if whitening is not None
+            else numerical_coef
+        )
+        exposed_coef = (
+            original_coef
+            if n_offsets == 1
+            else cp.reshape(
+                original_coef,
+                (basis_width, n_offsets),
+                order="F",
+            )
+        )
+        comp.aux[f"{role}_coef"] = exposed_coef
+        if whitening is not None:
+            comp.aux[f"{role}_numerical_coef"] = numerical_coef
+        expr = design @ numerical_coef
         # SYNTHESIS: penalty is in coefficient space (fixed basis dim, no
         # signal-length dependence) -- never averaged by length.
-        loss = weight * cp.sum_squares(coef)
+        loss = weight * cp.sum_squares(original_coef)
+        if n_offsets > 1 and lag_smooth_weight:
+            original_coef_matrix = cp.reshape(
+                original_coef,
+                (basis_width, n_offsets),
+                order="F",
+            )
+            loss += lag_smooth_weight * cp.sum_squares(
+                cp.diff(original_coef_matrix, axis=1)
+            )
+        return expr, loss, []
+
+    comp.build = build
+    return comp
+
+
+# Tensor-product formulation adapted from TSGAM.
+# Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Nimish Telang
+def exog_interaction(
+    left_basis,
+    right_basis,
+    weight=0.0,
+    role="interaction",
+    *,
+    factor_names=None,
+    whiten=False,
+    fit_mask=None,
+    rank_tolerance=None,
+):
+    """Independent tensor-product interaction between two exogenous bases.
+
+    The component models all pairwise products between columns of
+    ``left_basis`` and ``right_basis``. It is separate from any main-effect
+    components: callers add those as their own roles when desired. Both factor
+    bases must be offset-free on their jointly valid rows. After the final
+    fitting mask is known, the complete tensor-product span is also audited
+    against the intercept and both main-effect spans. A one-dimensional factor
+    is treated as a one-column basis.
+
+    Parameters
+    ----------
+    left_basis, right_basis : numpy.ndarray, shape (T, q) and (T, r)
+        Current-index, offset-free factor bases. Non-finite factor rows are
+        unavailable and excluded through the component validity mask.
+    weight : float
+        Ridge weight on the original ``q x r`` coefficient matrix.
+    role : str
+        Component role name.
+    factor_names : tuple of str, optional
+        Human-readable ``(left, right)`` labels retained as metadata only.
+    whiten : bool
+        If True, exactly whiten the full-rank interaction design on
+        ``fit_mask`` while retaining the original-coordinate penalty.
+    fit_mask : numpy.ndarray, optional
+        Exact boolean rows used by the final linking constraint. Required when
+        ``whiten=True`` and checked against the interaction availability mask.
+    rank_tolerance : float, optional
+        Explicit singular-value threshold for whitening rank eligibility.
+
+    Returns
+    -------
+    Component
+        ``<role>_coef`` is the original ``q x r`` coefficient matrix. With
+        whitening, ``<role>_numerical_coef`` is the solver-coordinate vector.
+        Problem assembly raises if the interaction duplicates any lower-order
+        direction on the final fitted support.
+    """
+    weight = float(weight)
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError("weight must be finite and non-negative.")
+    if factor_names is not None:
+        if isinstance(factor_names, str):
+            raise ValueError("factor_names must contain two non-empty strings.")
+        factor_names = tuple(factor_names)
+        if len(factor_names) != 2 or any(
+            not isinstance(name, str) or not name for name in factor_names
+        ):
+            raise ValueError("factor_names must contain two non-empty strings.")
+
+    interaction_basis = make_interaction_basis(left_basis, right_basis)
+    parameterization_mask = None
+    if fit_mask is not None:
+        supplied_mask = np.array(fit_mask, copy=True)
+        if supplied_mask.dtype != np.bool_:
+            raise TypeError("fit_mask must have boolean dtype.")
+        if supplied_mask.shape != interaction_basis.valid_mask.shape:
+            raise ValueError(
+                f"fit_mask has shape {supplied_mask.shape}, expected "
+                f"{interaction_basis.valid_mask.shape}."
+            )
+        if not supplied_mask.any():
+            raise ValueError("fit_mask selects no rows.")
+        if np.any(supplied_mask & ~interaction_basis.valid_mask):
+            raise ValueError(
+                "fit_mask includes rows where an interaction factor is unavailable."
+            )
+        supplied_mask.setflags(write=False)
+        parameterization_mask = supplied_mask
+    elif whiten:
+        raise ValueError("fit_mask is required when whiten=True.")
+
+    whitening = None
+    design = interaction_basis.design
+    if whiten:
+        whitening = whiten_basis(
+            design,
+            parameterization_mask,
+            rank_tolerance=rank_tolerance,
+            context=f"interaction component {role!r}",
+        )
+        design = whitening.whitened_basis
+
+    metadata = {
+        "interaction_basis": interaction_basis,
+        "factor_names": factor_names,
+        "whitening": whitening,
+    }
+
+    def validate_fit_mask(final_fit_mask):
+        interaction_basis.validate_interaction_only(
+            final_fit_mask,
+            context=f"interaction component {role!r}",
+        )
+
+    comp = Component(
+        role=role,
+        build=None,
+        valid_mask=interaction_basis.valid_mask,
+        parameterization_mask=parameterization_mask,
+        metadata=metadata,
+        fit_mask_validator=validate_fit_mask,
+    )
+
+    def build(T):
+        if interaction_basis.design.shape[0] != T:
+            raise ValueError(
+                f"interaction basis for role {role!r} has length "
+                f"{interaction_basis.design.shape[0]}, expected {T}."
+            )
+        n_coefficients = (
+            interaction_basis.left_width * interaction_basis.right_width
+        )
+        coefficient_name = (
+            f"{role}_numerical_coef" if whitening is not None else f"{role}_coef"
+        )
+        numerical_coef = cp.Variable(n_coefficients, name=coefficient_name)
+        original_coef = (
+            whitening.transform @ numerical_coef
+            if whitening is not None
+            else numerical_coef
+        )
+        comp.aux[f"{role}_coef"] = cp.reshape(
+            original_coef,
+            (interaction_basis.left_width, interaction_basis.right_width),
+            order="C",
+        )
+        if whitening is not None:
+            comp.aux[f"{role}_numerical_coef"] = numerical_coef
+        expr = design @ numerical_coef
+        loss = weight * cp.sum_squares(original_coef)
         return expr, loss, []
 
     comp.build = build
@@ -270,7 +702,15 @@ def bounded(inner, lower=None, upper=None):
     changing its loss. Either bound may be None (one-sided). For example,
     bounded(smooth_trend(...), lower=0.0) gives a nonnegative smooth trend.
     """
-    comp = Component(role=inner.role, build=None, aux=inner.aux)
+    comp = Component(
+        role=inner.role,
+        build=None,
+        aux=inner.aux,
+        valid_mask=inner.valid_mask,
+        parameterization_mask=inner.parameterization_mask,
+        metadata=inner.metadata,
+        fit_mask_validator=inner.fit_mask_validator,
+    )
 
     def build(T):
         expr, loss, cons = inner.build(T)
