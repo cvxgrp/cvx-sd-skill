@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "rdtools @ git+https://github.com/NREL/rdtools.git",
 #     "pandas",

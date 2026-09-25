@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.12"
 # dependencies = ["marimo", "signaldecomp", "numpy", "pandas", "matplotlib"]
 # ///
 """Worked example (marimo): signal-decomposition degradation-style analysis.

@@ -126,7 +126,7 @@ uv sync            # or: pip install -e .
 uv run python -m pytest
 ```
 
-Requires Python ≥ 3.13. Core dependencies: CVXPY, NumPy, SciPy, pandas,
+Requires Python ≥ 3.12. Core dependencies: CVXPY, NumPy, SciPy, pandas,
 Matplotlib. Interactive exploration is best done in
 [marimo](https://marimo.io/). The repository's default uv development
 environment includes marimo, but the published core library does not depend on
