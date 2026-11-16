@@ -3,7 +3,31 @@
 This is the layer beneath the component catalog: the decomposition, the mask,
 the component cost, and the DCP check that makes composition safe.
 
+## Review existing models
+
+Map existing code to the decomposition before changing it. Least-squares
+regression is a residual plus a basis expansion; a smoothing spline adds a
+quadratic roughness penalty; a GAM uses multiple named basis responses. Identify
+the residual loss, basis/function space, penalty normalization, intercept
+ownership, constraints, time units, and fitted rows in each implementation.
+
+For an equivalent refactor, preserve all of those choices and compare original
+objectives, reconstructed signals, individual components, coefficients in the
+original coordinates, constraints, and the domain quantity extracted from the
+fit. Similar predictions alone do not establish equivalent component allocation.
+Whitening must transform the original penalty as well as the design. See
+[exogenous-numerics.md](exogenous-numerics.md).
+
+If the scientific model changes, name that change separately from the refactor.
+Retain the old implementation as a control and use tolerances appropriate to
+the extracted quantity. Convexity certifies the optimization structure, not the
+scientific interpretation; see [downstream.md](downstream.md).
+
 ## The decomposition
+
+For time-grid preparation see [time-axis.md](time-axis.md); for Fourier
+periods and additive versus coupled seasonality see
+[periodic-and-time.md](periodic-and-time.md).
 
 A decomposition writes the observed signal as a sum of `K` estimated
 components:

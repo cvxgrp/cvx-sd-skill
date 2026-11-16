@@ -90,12 +90,53 @@ Compose three skills, each owning one layer:
 Defer to the marimo skills for the mechanics; these are the cvx-sd-specific
 traps worth naming here:
 
-- **Open a PEP 723 notebook with `--sandbox`**, or marimo ignores its inline
-  dependencies, including `signaldecomp`.
+- **Choose the environment explicitly.** Repository examples use the shared
+  project environment, described below. Sandbox mode creates a separate
+  environment and does not inherit the checkout's editable package.
 - **During a live session the running kernel is the source of truth — drive it,
   do not edit the `.py`.** File edits do not update the kernel and may be
   overwritten. Give each public name one owning cell; use distinct names for
   build, solve, and read stages.
+
+### Project environment and portable copies
+
+From the repository root, run `uv sync --locked`, then
+`uv run python -m marimo edit examples/gasoline_price_trends.py`.
+The default uv groups include marimo and pytest. Use the module form for both
+tools so execution uses the selected Python environment. The notebooks have
+no inline dependency metadata: the project lock is their dependency source.
+
+To use a copied notebook elsewhere, install a built `signaldecomp` wheel and
+marimo in that environment. For gasoline, copy `gasoline_prices.csv` beside
+the notebook and run `python -m marimo edit <notebook.py>`.
+
+The PV notebook currently loads `examples/pvdaq4_daily_y.pickle` relative to
+the launch directory. Preserve this layout under the directory you launch from:
+
+```text
+copied-project/
+  examples/
+    pvdaq4_degradation.py
+    pv_domain.py
+    pvdaq4_daily_y.pickle
+```
+
+Run `python -m marimo edit examples/pvdaq4_degradation.py` from
+`copied-project/`, not from `examples/`. Prepare the pickle separately using
+`prep_pvdaq4_daily_y.py`; placing it beside the notebook works only with this
+layout and launch directory. Example data and notebooks are repository assets,
+not wheel data.
+
+For an intentionally standalone PEP 723 notebook, declare all dependencies
+and open it with `uvx marimo edit --sandbox <notebook.py>`. Declare
+`signaldecomp` using an accessible wheel or an immutable Git revision until a
+package-index release exists. Never put a developer's absolute filesystem path
+in shared metadata. Sandbox mode is useful for sharing, but it will not test
+uncommitted changes in this checkout.
+
+See marimo's [project](https://docs.marimo.io/guides/package_management/projects/)
+and [sandbox](https://docs.marimo.io/guides/package_management/sandboxes/)
+documentation for the environment distinction.
 
 ## Exploration ends in a specification
 

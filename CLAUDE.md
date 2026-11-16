@@ -88,11 +88,18 @@ source of truth for written and planned references.
 For marimo examples, validate the notebook graph with:
 
 ```bash
-uv run --group examples marimo check examples/<notebook>.py
+uv run python -m marimo check examples/<notebook>.py
 ```
 
 `marimo check` verifies cell ownership and dataflow, not runtime results; run
 important numeric paths in a live kernel as well.
+
+Repository notebooks use the project environment without PEP 723 metadata.
+Use `uv sync --locked` and the module form above. Sandbox mode is separate and
+requires explicitly declared dependencies; see `reference/marimo.md`.
+
+Before release, follow `RELEASE.md`. Do not treat upstream algebraic/synthetic
+tests as evidence that downstream scientific-equivalence controls passed.
 
 Run plain Python examples directly, including the exogenous integration
 control:

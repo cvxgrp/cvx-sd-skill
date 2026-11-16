@@ -1,15 +1,8 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "marimo>=0.23.15",
-#     "matplotlib>=3.10",
-#     "numpy>=2.0",
-#     "pandas>=3.0",
-#     "scipy==1.18.0",
-#     "signaldecomp @ file:///Users/bmeyers/github/agent-test/gasoline-analysis/.agents/skills/cvx-signal-decomposition",
-# ]
-# ///
-"""Reference notebook for comparing convex gasoline-price trend models."""
+"""Reference notebook for comparing convex gasoline-price trend models.
+
+Uses the repository environment: uv run python -m marimo edit <this file>.
+Keep gasoline_prices.csv beside the notebook when copying it elsewhere.
+"""
 
 import marimo
 

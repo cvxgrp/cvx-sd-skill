@@ -156,40 +156,45 @@ day, week, batch, device state, or something else.
 ## Multiperiodic (strictly periodic is a special case)
 
 - **`multiperiodic(periods, num_harmonics=6, weight=0.1, role="periodic")`** — a
-  joint **quasi-periodic** model over one or more periods. With a single period
+  joint **multiperiodic** model over one or more periods, potentially
+  quasiperiodic when the periods are incommensurate. With a single period
   it reduces to an ordinary truncated-Fourier series — the strictly-periodic
   special case. With several periods its distinctive power is the **cross-terms**.
 
   The basis is `[offset] + [a Fourier block per period] + [pairwise cross-terms]`,
-  with the **DC/offset column dropped** (the constant belongs to the trend
-  intercept — this is what keeps trend and periodic from fighting over the mean).
+  with the explicit **DC/offset column dropped**, assigning that intercept
+  direction to another component. Partial/masked cycles can still have nonzero
+  empirical means, and redundant frequencies can remain.
   The **cross-terms are products of one period's harmonics with another's**, so
   the coefficients don't merely set each period's amplitude independently — they
   let **the *shape* of the short-period cycle change as the long period
   advances.** A model with daily and yearly periods can represent a *daily
   profile that reshapes across the seasons* — a summer day and a winter day with
-  genuinely different within-day curves — not just the same daily curve scaled up
-  and down. Turn the cross-terms off and you are back to the strictly-periodic
-  case: a fixed shape whose amplitude alone can vary.
+  different within-day curves, beyond rescaling one fixed curve. Without cross
+  terms the model is an additive sum of fixed-coefficient periodic waveforms;
+  it does not provide amplitude modulation. Commensurate active periods give a
+  common repeat period; incommensurate active frequencies can be quasiperiodic.
 
-  `num_harmonics` sets harmonics per period; **`max_cross_k`** caps how many
-  harmonics per side enter the cross-terms — the knob for how much shape-drift
-  the model can express (and the basis width). `periods` are in **samples**
+  `num_harmonics` sets harmonics per period. The lower-level
+  `signaldecomp.basis` helpers expose **`max_cross_k`** to cap harmonics entering
+  cross terms; it is not in the public `multiperiodic` signature. The component
+  includes all pairwise products of its selected harmonics. `periods` are in **samples**
   (convert with `period_samples(seconds, delta)`); pass a sequence for
   multi-scale structure. Aux `<role>_theta` holds the coefficient vector.
 
   ```python
   expr = B @ theta                    # B = [offset | per-period blocks | cross-terms], DC dropped
   loss = cp.sum_squares(reg @ theta)  # reg diagonal: weight * (2*pi/sqrt(P)) * i for harmonic i
-                                      # -> Dirichlet (derivative) energy: higher harmonics cost more
+                                      # higher harmonics cost more; products inherit the shorter-period factor's entry
   ```
 
-  The `reg` term is a **Dirichlet-energy penalty**: a diagonal weight
-  `weight * (2*pi/sqrt(P)) * i` on harmonic `i` of period `P` (the `sqrt(P)`
-  normalizes across periods; the offset is unregularized). It is the leash on all
-  that shape-flexibility — high harmonics cost more, biasing toward the smoothest
-  periodic shape consistent with the data. `weight` trades shape-fidelity against
-  smoothness.
+  The package uses Fourier-inspired coefficient roughness: diagonal entry
+  `weight * (2*pi/sqrt(P)) * i` for harmonic `i` of period `P`, inherited from
+  the shorter-period factor for each product. The explicit offset is removed;
+  the penalty is not averaged by signal length. Since `weight` is inside
+  `reg`, its effect on this quadratic loss is squared. These are package
+  conventions, not an exact derivative-energy identity for arbitrary coupled
+  waveforms or a promise of the source papers' normalization.
 
 "Seasonal" is just one use — daily, weekly, or any cyclic pattern is expressed
 the same way. See [periodic-and-time.md](periodic-and-time.md) for Δ-scaling,

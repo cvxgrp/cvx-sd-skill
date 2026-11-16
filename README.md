@@ -6,9 +6,11 @@ spikes, exogenous responses, …) by solving one convex problem or a specified
 deterministic sequence of convex problems modeled in
 [CVXPY](https://www.cvxpy.org/).
 
-> ⚠️ **Work in progress.** The core library is implemented and tested. The
-> agent-facing skill has a complete entry point and a growing reference set, but
-> several deep dives and examples remain. Interfaces and prose may change.
+The package and skill are preparing for **v0.1.0**, the first tagged release.
+The implemented scope is described below; a downstream scientific-equivalence
+acceptance item remains open. See [RELEASE.md](RELEASE.md) for the release
+checklist. The `0.1.0` package version alone does not mean a tag or package-index
+release has been published.
 
 ## What this is
 
@@ -119,11 +121,12 @@ Install the agent skill:
 npx skills add cvxgrp/cvx-sd-skill
 ```
 
-For local library development:
+For local library development and repository examples:
 
 ```bash
-uv sync            # or: pip install -e .
-uv run python -m pytest
+uv sync --locked
+uv run python -m pytest -q
+uv run python -m marimo edit examples/gasoline_price_trends.py
 ```
 
 Requires Python ≥ 3.12. Core dependencies: CVXPY, NumPy, SciPy, pandas,
@@ -132,7 +135,17 @@ Matplotlib. Interactive exploration is best done in
 environment includes marimo, but the published core library does not depend on
 it.
 
-## Status & milestones
+To install the library into another project before a package-index release,
+build a wheel with `uv build --wheel` and install the resulting wheel with
+`python -m pip install /path/to/signaldecomp-0.1.0-py3-none-any.whl` in that
+project's environment. Alternatively install from an immutable Git revision
+using `python -m pip install "signaldecomp @ git+https://github.com/cvxgrp/cvx-sd-skill.git@<commit>"`.
+Installing the agent skill does not install the Python package. Notebooks and
+their companion files live in the repository, not in the wheel. For portable
+notebook copies and the separate sandbox workflow, see
+[marimo.md](reference/marimo.md#project-environment-and-portable-copies).
+
+## Supported scope for v0.1
 
 - [x] Core library: masked problem builder, convex component catalog,
       data-fidelity losses
@@ -147,11 +160,21 @@ it.
 - [x] `SKILL.md` — concise agent-facing entry point and workflow router
 - [x] Core references: formulation, component catalog, diagnostics, marimo,
       model specification, implementation, and philosophy
-- [ ] Remaining references: periodic & time, time-axis preparation, downstream,
-      recontextualization, and gotchas
+- [x] Time preparation, periodic modeling, downstream extraction and uncertainty
+      references; review guidance and pitfalls consolidated in existing references
 - [x] PV degradation worked example
-- [ ] Hourly electrical-load worked example
-- [ ] Broader contributor and usage documentation
+
+Supported means implemented and covered by package tests; it does not claim
+drop-in TSGAM estimator compatibility or application-specific scientific parity.
+The API targets scalar signals on caller-declared regular grids, convex models
+and explicitly specified convex sequences. Whitening is strict and full rank;
+it does not truncate a deficient basis. Holdout selection uses one contiguous
+block. Bootstrap intervals are conditional on a selected model and are not a
+general end-to-end uncertainty procedure.
+
+Future work includes a forecasting/AR orchestration layer, TSGAM adoption and
+parity tests, an hourly electrical-load example, broader contributor guidance,
+and richer validation schemes. These are not promised by v0.1.
 
 ## Feedback
 

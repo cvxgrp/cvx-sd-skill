@@ -78,6 +78,8 @@ Identify the context before formulating:
   before you commit. **We recommend marimo here**: build a live notebook where
   sliders and dropdowns let the user *feel* the tradeoffs between model
   families. Take over at the standardize step (`time_axis`, `heatmap`). See
+  [time-axis.md](reference/time-axis.md),
+  [periodic-and-time.md](reference/periodic-and-time.md), and
   [marimo.md](reference/marimo.md).
 - **Implementation** — model decided, target is production. Be precise and
   deterministic: plain `signaldecomp` (or generated) CVXPY, a correct Δ,
@@ -88,7 +90,7 @@ Identify the context before formulating:
   no mask"), correct footguns, extend append-only. Much classical modeling —
   regression, splines, GAMs, Fourier — is a convex decomposition in disguise;
   recognizing that is the job. See
-  [recontextualization.md](reference/recontextualization.md).
+  [Review existing models](reference/formulation.md#review-existing-models).
 
 ## Formulate: compose, don't shop
 
@@ -162,10 +164,13 @@ the residual, each component keyed by role, and component auxiliary values.
 Catalog builders and hand-written `Component` objects share the same
 `components` list and solve path.
 
+For physical-unit extraction, reporting, conditional bootstrap intervals, and
+record-length stability, follow [downstream.md](reference/downstream.md).
+
 ## Footguns
 
-These fail *silently* — the solve still returns `optimal`, the model still looks
-fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
+These can fail silently while the solve still returns `optimal`. Follow the
+linked references for the corresponding checks.
 
 - **Scale periods by Δ.** A period is a physical duration, not an integer
   sample count. Express periods and Δ in the same unit and convert with
@@ -202,11 +207,6 @@ fine. Earned emphasis; the rest live in [gotchas.md](reference/gotchas.md).
   tuning, coupled-knob reduction, and the implementation handoff.
 - [philosophy.md](reference/philosophy.md) — why convex; under-specification;
   the boundary between convex, convex-sequence, and discrete models.
-
-### Planned
-
-The references below are not yet written; the links are placeholders.
-
 - [periodic-and-time.md](reference/periodic-and-time.md) — Fourier periodics,
   float periods, Δ-scaling, leap years, multi-scale, the trend↔seasonal
   confound.
@@ -214,6 +214,7 @@ The references below are not yet written; the links are placeholders.
   `(y, index, Δ)`; the heat-map diagnostic.
 - [downstream.md](reference/downstream.md) — extraction, bootstrap CIs,
   expanding-window stability, reporting, the pandas round-trip.
-- [recontextualization.md](reference/recontextualization.md) — recognizing
-  latent convex decompositions in classical / hand-rolled code.
-- [gotchas.md](reference/gotchas.md) — the fuller footgun list.
+
+Review/recontextualization guidance lives in
+[formulation.md](reference/formulation.md#review-existing-models). Common
+pitfalls are kept with their owning reference rather than in a separate list.
