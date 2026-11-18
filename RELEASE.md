@@ -61,6 +61,20 @@ The automated test workflow runs package tests, documentation examples, notebook
 graph checks, and the exogenous example. A remote CI result remains required
 after the candidate is pushed.
 
+### Remote CI record, 2026-11-16
+
+[Tests run 43956618669](https://github.com/cvxgrp/cvx-sd-skill/actions/runs/43956618669)
+completed successfully on commit
+`aa9aa7bb5f1d3df1a3a9c234c2e5d697d006cf8f`. All three Ubuntu jobs passed:
+
+- [Python 3.12](https://github.com/cvxgrp/cvx-sd-skill/actions/runs/43956618669/job/133612740296)
+- [Python 3.13](https://github.com/cvxgrp/cvx-sd-skill/actions/runs/43956618669/job/133612740475)
+- [Python 3.14](https://github.com/cvxgrp/cvx-sd-skill/actions/runs/43956618669/job/133612739731)
+
+Each job passed installation, package/documentation tests, notebook graph
+checks, and the lagged-exogenous example. This closes the remote CI item for
+that commit. Later release-candidate commits need their own green run.
+
 ### Local check record, 2026-11-13
 
 Working tree based on `70e7388` plus the uncommitted release-preparation changes:

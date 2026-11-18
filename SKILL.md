@@ -83,8 +83,9 @@ Identify the context before formulating:
   [marimo.md](reference/marimo.md).
 - **Implementation** — model decided, target is production. Be precise and
   deterministic: plain `signaldecomp` (or generated) CVXPY, a correct Δ,
-  reproducible build/solve, tests. Rarely a single solve — see
-  [implementation.md](reference/implementation.md).
+  reproducible build/solve, tests. Convexity does not bound compilation cost;
+  see [implementation.md](reference/implementation.md) for repeated solves and
+  the distinct reuse mechanisms.
 - **Review / edit** — existing code, SD or SD-shaped. Read it, map it onto the
   substrate ("this smoothing spline *is* an x0-residual with a smooth trend and
   no mask"), correct footguns, extend append-only. Much classical modeling —
@@ -187,6 +188,11 @@ linked references for the corresponding checks.
 - **Name the uncertainty target.** Bootstrapping a selected, frozen model gives
   conditional uncertainty; it does not include variation from preprocessing,
   model specification, tuning, or selection.
+- **Judge parameterization by total time saved, not percentage speedup.** Halving a
+  155 ms solve saves only 77.5 ms per call, or about 7.8 seconds over 100 solves,
+  before extra cache-construction costs. Weigh absolute savings over the
+  expected workload against memory use and implementation complexity. See
+  [implementation.md](reference/implementation.md).
 
 ## Reference
 
