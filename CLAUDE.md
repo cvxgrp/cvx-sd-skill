@@ -98,8 +98,8 @@ Repository notebooks use the project environment without PEP 723 metadata.
 Use `uv sync --locked` and the module form above. Sandbox mode is separate and
 requires explicitly declared dependencies; see `reference/marimo.md`.
 
-Before release, follow `RELEASE.md`. Do not treat upstream algebraic/synthetic
-tests as evidence that downstream scientific-equivalence controls passed.
+Do not treat upstream algebraic/synthetic tests as evidence that downstream
+scientific-equivalence controls passed.
 
 Run plain Python examples directly, including the exogenous integration
 control:
