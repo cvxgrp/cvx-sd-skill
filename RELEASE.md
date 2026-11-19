@@ -17,25 +17,22 @@ downstream scientific workflow merely by exporting matching primitives.
 
 ## Downstream acceptance record
 
-The component-lift plan required downstream scientific controls for Slices
-1-2. The retained plan explicitly recorded that gate as open. On 2026-11-13,
-review of repository history and local plan/memory records found no completion
-record tying a downstream run to the integrated package revision. The original
-numerics handoff describes earlier downstream validation of that application's
-own implementation; that is useful provenance, not acceptance of this lift.
+Completed 2026-11-18 for the lifted zero-offset spline and penalty-preserving
+whitening implementation at upstream revision
+`aa9aa7bb5f1d3df1a3a9c234c2e5d697d006cf8f`, based on independently reviewed
+private downstream validation evidence. Acceptance covers package-upgrade
+compatibility and upstream-helper equivalence with the downstream scientific
+model held fixed, within the tested formulations, numerical environment, and
+predeclared tolerances.
 
-Keep this gate open until the owner provides either:
+This closes the component-lift plan's downstream acceptance item for Slices
+1-2. It does not extend acceptance to composed-block whitening, lagged models,
+broader application coverage, historical dependency-environment replay,
+installed-wheel behavior, or production migration. The underlying evidence
+remains private; no application-specific code, fixtures, identifiers, paths,
+data, or results are included here.
 
-- A downstream run record: application and package revisions, control fixture
-  identity, preprocessing/support policy, solvers/tolerances, original objective,
-  reconstruction, component and scientific-summary comparisons, and original
-  constraint checks with predeclared acceptance tolerances; or
-- An explicit decision to defer this application integration gate and release
-  the tested upstream package with downstream parity outside the release scope.
-
-No real application data needs to be copied into this repository. Record a
-durable report location and its outcome. Similar held-out scores or synthetic
-whitening invariance alone do not close this acceptance item.
+This bounded acceptance does not authorize a release, tag, or publication.
 
 ## Candidate checks
 
@@ -105,13 +102,13 @@ path-resolution check, not execution of the PV scientific analysis.
 Temporary check artifacts were written under `/tmp/cvx-sd-release-dist` and
 `/tmp/cvx-sd-portable.E08DUy`; these paths are local evidence, not durable
 release downloads. Re-run candidate checks after review on the committed
-revision. The downstream acceptance item above remains open.
+revision. Downstream acceptance was subsequently completed as recorded above.
 
 ## Tagging after approval
 
-Resolve the downstream gate above, review and commit the release changes, and
-confirm a green CI result on that exact commit. Then create an annotated
-`v0.1.0` tag with release notes summarizing the scope and limitations, and push
+With bounded downstream acceptance complete, review and commit the release
+changes and confirm a green CI result on that exact commit. Then create an
+annotated `v0.1.0` tag with release notes summarizing the scope and limitations, and push
 that tag after owner authorization. Do not tag the pre-change HEAD while local
 release changes are uncommitted. Publishing to a package index is a separate
 step; the repository and local wheel install paths work before publication.
