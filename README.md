@@ -98,14 +98,16 @@ that the same components fit your data.
 
 ## Install the library in another project
 
-To install directly from GitHub, run this in your project's Python environment
-(Python 3.12 or newer, with Git available):
+Install the [v0.1.0 release](https://github.com/cvxgrp/cvx-sd-skill/releases/tag/v0.1.0)
+from GitHub in your project's Python environment (Python 3.12 or newer, with
+Git available):
 
 ```bash
-python -m pip install "signaldecomp @ git+https://github.com/cvxgrp/cvx-sd-skill.git"
+python -m pip install "signaldecomp @ git+https://github.com/cvxgrp/cvx-sd-skill.git@v0.1.0"
 ```
 
-For reproducible installs, append `@` followed by a commit hash to the URL.
+The `@v0.1.0` suffix selects the tagged release instead of the current `main`
+branch.
 You can also build a wheel from a checkout with `uv build --wheel` and install
 the resulting `.whl` file from `dist/`. The library installation does not
 include marimo or the example notebooks and data. See the
